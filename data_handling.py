@@ -15,7 +15,12 @@ when they were originally written, no thought was given and EEGDataset is too va
 we will get there eventually. for I just want the 60 channel working from github.
 - 
 '''
-
+import torch
+from glob import glob
+import glob
+from torch.utils.data import Dataset
+import os
+import pandas as pd
 
 #Load In the Dataset
 class EEGDataset(Dataset):
