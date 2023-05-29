@@ -6,12 +6,13 @@ for clinical EEG with ~60 channels, we have one architecture and for wearable EE
 
 I've put the existing model for the ~60 channels below, but I haven't formatted or managed the libraries for you. 
 '''
+import torch.nn as nn
+import torch
 
-
-class PDNet(nn.Module):
+class PD_CNN(nn.Module):
 
     def __init__(self,chunk_size=2500):
-        super(PDNet, self).__init__()
+        super(PD_CNN, self).__init__()
         self.chunk_size = chunk_size
 
         self.conv1 = nn.Conv1d(in_channels=60, out_channels=21, kernel_size=20,stride=1)

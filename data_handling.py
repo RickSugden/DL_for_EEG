@@ -1,28 +1,9 @@
-'''
-This file is where we will put dataset and dataloader classes for the EEG data. note that the current dataset class is only for clinical EEG
-so we will need to write a new one for wearable EEG or make this one dynamic--your choice. 
-
-specs:
-- dataset class should be a subclass of torch.utils.data.Dataset
-- dataloader class should be a subclass of torch.utils.data.DataLoader
-- dataset class should have a __len__ method that returns the length of the dataset
-- dataset class should have a __getitem__ method that returns a tuple of (data, label) for the index given
-- note that datasets can return more than just data and label, if needed to keep track of things like subject name
-- we are assuming that the input is a folder containing all the files and that the filenames start with either PD or CTL 
-so that is what gets used for the label
-- for the 60-channel EEG call the class "sixty_channel_EEG_dataset" and for the 4-channel EEG call the class "four_channel_EEG_dataset"
-when they were originally written, no thought was given and EEGDataset is too vague to be useful going forward. Don't worry about making the 4channel just yet
-we will get there eventually. for I just want the 60 channel working from github.
-- 
-'''
 import torch
 from glob import glob
 import glob
 from torch.utils.data import Dataset
 import os
 import pandas as pd
-
-#Load In the Dataset
 class EEGDataset(Dataset):
 
   def __init__(self, data_path, chunk_size=1000):
@@ -34,7 +15,7 @@ class EEGDataset(Dataset):
     #create containers for the data and labels respectively
     self.df_list = []
     self.label_list = []
-
+    self.chunk_size=chunk_size
     #create a list of datafields to keep. The electrodes given here are those in common to both the UI and UNM datasets.
     self.common_electrodes = ['time', 'Fp1', 'Fz', 'F3', 'F7', 'FC5', 'FC1', 'C3', 'T7', 'TP9', 'CP5', 'CP1', 'Pz', 'P3', 'P7', 'O1', 'Oz', 'O2', 'P4', 'P8', 'TP10', 'CP6', 'CP2', 'Cz', 'C4', 'T8', 'FT10', 'FC6', 'FC2', 'F4', 'F8', 'Fp2', 'AF7', 'AF3', 'AFz', 'F1', 'F5', 'FT7', 'FC3', 'FCz', 'C1', 'C5', 'TP7', 'CP3', 'P1', 'P5', 'PO7', 'POz', 'PO8', 'P6', 'P2', 'CP4', 'TP8', 'C6', 'C2', 'FC4', 'FT8', 'F6', 'F2', 'AF4', 'AF8']
     if data_path[-4:] != '.csv':
@@ -127,7 +108,24 @@ class EEGDataset(Dataset):
     PD_label = torch.tensor(self.class_map[PD_label], dtype=torch.long)
     
     #reformat the eeg data
-    eeg_tensor = torch.tensor(eeg_dataframe[0:chunk_size].values) #you can artificially shorten epochs here
+    eeg_tensor = torch.tensor(eeg_dataframe[0:self.chunk_size].values) #you can artificially shorten epochs here
     eeg_tensor = torch.permute(eeg_tensor,(1, 0))
     
     return eeg_tensor.float(), PD_label.float(), filename
+'''
+This file is where we will put dataset and dataloader classes for the EEG data. note that the current dataset class is only for clinical EEG
+so we will need to write a new one for wearable EEG or make this one dynamic--your choice. 
+
+specs:
+- dataset class should be a subclass of torch.utils.data.Dataset
+- dataloader class should be a subclass of torch.utils.data.DataLoader
+- dataset class should have a __len__ method that returns the length of the dataset
+- dataset class should have a __getitem__ method that returns a tuple of (data, label) for the index given
+- note that datasets can return more than just data and label, if needed to keep track of things like subject name
+- we are assuming that the input is a folder containing all the files and that the filenames start with either PD or CTL 
+so that is what gets used for the label
+- for the 60-channel EEG call the class "sixty_channel_EEG_dataset" and for the 4-channel EEG call the class "four_channel_EEG_dataset"
+when they were originally written, no thought was given and EEGDataset is too vague to be useful going forward. Don't worry about making the 4channel just yet
+we will get there eventually. for I just want the 60 channel working from github.
+- 
+'''
