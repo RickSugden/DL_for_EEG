@@ -13,6 +13,7 @@ import torch.nn as nn # basic building block for neural neteorks
 import torch
 import torch.optim as optim # optimzer
 import pandas as pd
+import models
 from models import PD_CNN
 
 def train(model,train_dataloader, val_dataloader, epochs=30, learning_rate=0.0001, training_loss_tracker=[], val_loss_tracker=[], device="cpu"):
@@ -179,7 +180,7 @@ def validate(model, valloader,threshold=0.5,batch_size=8, supress_output=False, 
   return true_positives, false_positives, true_negatives, false_negatives, vote, sequence
 
 #cross train function for loso cross validation
-def cross_train(train_dataloader, val_dataloader, epochs=23, learning_rate=0.0001, num_workers=2,  threshold=0.5, chunk_size=2500, device='cpu'):
+def cross_train(model, train_dataloader, val_dataloader, epochs=23, learning_rate=0.0001, num_workers=2,  threshold=0.5, chunk_size=2500, device='cpu', supress_output=False):
     '''
       INPUTS:
         model(nn.Module): here we will pass PDNet to the training loop.
@@ -192,9 +193,7 @@ def cross_train(train_dataloader, val_dataloader, epochs=23, learning_rate=0.000
         TP, FP, TN, FN (int): confusion matrix
         vote (str): correct/incorrect
     '''
-    #create a model
-    model = PD_CNN(chunk_size=chunk_size).to(device)
-    model.train()
+    
 
     #define loss function and optimizer
     criterion = nn.CrossEntropyLoss(weight=torch.tensor([0.5,0.5]).to(device))
@@ -282,39 +281,59 @@ def cross_train(train_dataloader, val_dataloader, epochs=23, learning_rate=0.000
 
     # Waits for everything to finish running
     #torch.cuda.synchronize()
-
-    print('The vote was: ', vote)
-    print('True Positives: ', TP)
-    print('False Positives: ',FP)
-    print('True Negatives: ', TN)
-    print('False Negatives: ', FN)
+    if supress_output == False:
+      print('The vote was: ', vote)
+      print('true positives: ', TP)
+      print('false positives: ',FP)
+      print('true negatives: ',TN)
+      print('false negatives', FN)
+   
 
     return TP, FP, TN, FN, vote, model
 
 
 def calculate_metrics(TP, FP, TN, FN):
 
-    #calculate accuracy
-    accuracy = (TP + TN) / (TP + TN + FP + FN)
+    if (TP + TN + FP + FN) == 0:
+      assert ValueError('No samples were predicted')
+    else:
+      #calculate accuracy
+      accuracy = (TP + TN) / (TP + TN + FP + FN)
 
-    #calculate precision
-    precision = TP / (TP + FP)
+    if (TP + FP) == 0:
+      precision = 0
+    else:
+      #calculate precision
+      precision = TP / (TP + FP)
 
-    #calculate recall
-    recall = TP / (TP + FN)
+    if (TP + FN) == 0:
+      recall = 0
+    else: 
+      #calculate recall
+      recall = TP / (TP + FN)
 
-    #calculate f1 score
-    f1_score = 2 * ((precision * recall) / (precision + recall))
+    #confirm f1 can be calculated
+    if (precision + recall) == 0:
+      f1_score = 0
+    else:
+       #calculate f1 score
+      f1_score = 2 * ((precision * recall) / (precision + recall))
 
-    #calculate sensitivity
-    sensitivity = TP / (TP + FN)
+    if (TP + FN) == 0:
+      sensitivity = 0
+    else:
+      #calculate sensitivity
+      sensitivity = TP / (TP + FN)
 
-    #calculate specificity
-    specficity = TN / (TN + FP)
+    if (TN + FP) == 0:
+      specficity = 0
+    else:
+      #calculate specificity
+      specficity = TN / (TN + FP)
 
     return accuracy, f1_score, sensitivity, specficity
 
-def loso_cross_validation(filename_list, EEG_whole_Dataset, epochs=1, batch_size=1, num_workers=2, chunk_size=2500, device='cpu'):
+def loso_cross_validation(filename_list, EEG_whole_Dataset, model='CNN', epochs=1, batch_size=1, num_workers=2, learning_rate=0.0001, chunk_size=2500, device='cpu', supress_output=False):
    ##################### CROSS VALIDATION ##############
   '''
   Here, a for loop will iterate through every object in the whole dataset. Using the filename, it will determine the
@@ -324,43 +343,38 @@ def loso_cross_validation(filename_list, EEG_whole_Dataset, epochs=1, batch_size
     '''
   correct_votes, incorrect_votes, unsure_votes = 0,0,0
   true_positives, false_positives, true_negatives, false_negatives = 0,0,0,0
-  acc_list, f1_list, AUC_list, sensitivity_list, specificity_list = [], [], [], [], []
+  
+  log = []
 
   #leave_out will be the subject we validate on
   for leave_out in filename_list:
+
     print('Running a fold while leaving out: ', leave_out)
-    to_be_removed = []
-
-    #
-    for index in range(len(EEG_whole_Dataset)):
-      complete_list = range(len(EEG_whole_Dataset))
-
-      subset_ds = Subset(EEG_whole_Dataset, [index])
-      sample_sampler = RandomSampler(subset_ds)
-      subset_dataloader = DataLoader(subset_ds, sampler=sample_sampler, batch_size=1)
-      data = next(iter(subset_dataloader))
-      eeg_data, label, filename = data
-      subj_id = filename[0]#.split('_')[1] #remove hashtags to return to UNM dataset
-
-      if subj_id == leave_out:
-        
-        to_be_removed.append(index)
-
-    to_be_kept = [x for x in complete_list if x not in to_be_removed]
-
-    train_dataset = Subset(EEG_whole_Dataset, to_be_kept)
-    val_dataset = Subset(EEG_whole_Dataset, to_be_removed)
-
+    
+    #make a training and validation dataset
+    train_dataset, val_dataset = loso_split(EEG_whole_Dataset, leave_out)
+    #convert datasets to dataloaders and delete the datasets to free up memory
     train_dataloader = DataLoader(train_dataset, batch_size=batch_size, shuffle=True, num_workers=num_workers, pin_memory=True)
     val_dataloader = DataLoader(val_dataset, batch_size=batch_size, shuffle=True, num_workers=num_workers, pin_memory=True)
     del train_dataset, val_dataset #free up memory
 
-    TP, FP, TN, FN, vote, model = cross_train(train_dataloader, val_dataloader, epochs=epochs, learning_rate=0.0001, threshold=0.5, chunk_size=chunk_size, device=device)
+    #create a model
+    if model == 'CNN':
+      model = PD_CNN(chunk_size=chunk_size).to(device)
+    else:
+       assert ValueError('Model not recognized')
+    model.train()
+
+    #perform one fold of training and validation
+    TP, FP, TN, FN, vote, model = cross_train(model, train_dataloader, val_dataloader, epochs=epochs, learning_rate=learning_rate, threshold=0.5, chunk_size=chunk_size, device=device, supress_output=supress_output)
+
+    #add the metrics to the lists
     true_positives += TP
     false_positives += FP
     true_negatives += TN
     false_negatives += FN
 
+    #determine whether this subject was predicted correct or incorrect by majority vote
     if vote == 'Correct':
       correct_votes += 1
     elif vote == 'Incorrect':
@@ -368,6 +382,9 @@ def loso_cross_validation(filename_list, EEG_whole_Dataset, epochs=1, batch_size
     else:
       unsure_votes +=1
 
+    log.append((leave_out, TP, FP, TN, FN, vote))
+
+  #print the results 
   print('total correct subject classifications: ', correct_votes)
   print('total incorrect subject classifications: ', incorrect_votes)
   print('total unsure subject classifications: ',unsure_votes)
@@ -377,72 +394,45 @@ def loso_cross_validation(filename_list, EEG_whole_Dataset, epochs=1, batch_size
   print('total false negatives (epochs)', false_negatives)
   print('----------------------------------------------------------------')
   acc, f1, sensitivity, specificity = calculate_metrics(true_positives, false_positives, true_negatives, false_negatives)
-  print(acc, f1, sensitivity, specificity)
+  print('accuracy',acc,' f1 ', f1, 'sensitivity', sensitivity, 'specificity', specificity)
+
+  total_results = [correct_votes, incorrect_votes, unsure_votes, true_positives, false_positives, true_negatives, false_negatives, acc, f1, sensitivity, specificity]
+ 
+  
+
+  return log, total_results
 
 
   
-  '''
-This file contains the deep learning models used in the project.
-- All models are implemented using PyTorch and are subclasses of nn.Module.
-- Note that the model architecture essentially has to be hard-coded so that means for different datatypes, we need to write different models.
-for clinical EEG with ~60 channels, we have one architecture and for wearable EEG with 4 channels, we need a new architecture (adapted from the other one).
+def loso_split(EEG_whole_Dataset, leave_out):
 
-I've put the existing model for the ~60 channels below, but I haven't formatted or managed the libraries for you. 
-'''
-import torch.nn as nn
-import torch
+  # we will make a list of all the indices to be removed
+  to_be_removed = []
 
-class PD_CNN(nn.Module):
+  #iterate through each object in the dataset to see if it belongs to the subject we are leaving out
+  for index in range(len(EEG_whole_Dataset)):
 
-    def __init__(self,chunk_size=2500):
-        super(PD_CNN, self).__init__()
-        self.chunk_size = chunk_size
+    #get list of all indecies so we can compare to the to_be_removed list
+    complete_list = range(len(EEG_whole_Dataset))
 
-        self.conv1 = nn.Conv1d(in_channels=60, out_channels=21, kernel_size=20,stride=1)
-        self.norm1 = nn.BatchNorm1d(num_features=21)
-        self.maxpool1 = nn.MaxPool1d(kernel_size=4,stride=4)
+    #build a dataloader with only one sample
+    subset_ds = Subset(EEG_whole_Dataset, [index])
+    sample_sampler = RandomSampler(subset_ds)
+    subset_dataloader = DataLoader(subset_ds, sampler=sample_sampler, batch_size=1)
 
-        self.conv2 = nn.Conv1d(in_channels=21, out_channels=42, kernel_size=10,stride=1)
-        self.norm2 = nn.BatchNorm1d(num_features=42)
-        self.maxpool2 = nn.MaxPool1d(kernel_size=4,stride=4)
+    #get the filename of the sample. this allows us to determine the subject number
+    _, _, filename = next(iter(subset_dataloader))
+    
+    #get the subject number and determine if this index is from the subject to leave out
+    subj_id = filename[0]#.split('_')[1] #remove hashtags to return to UNM dataset
+    if subj_id == leave_out:
+      to_be_removed.append(index)
 
-        self.conv3 = nn.Conv1d(in_channels=42, out_channels=42, kernel_size=10,stride=1)
-        self.norm3 = nn.BatchNorm1d(num_features=42)
-        self.maxpool3 = nn.MaxPool1d(kernel_size=4,stride=4)
+  #now we have a list of all the indices to be removed. We can use this to make a list of all the indices to be kept
+  to_be_kept = [x for x in complete_list if x not in to_be_removed]
 
-        self.conv4 = nn.Conv1d(in_channels=42, out_channels=64, kernel_size=5,stride=1)
-        self.norm4 = nn.BatchNorm1d(num_features=64)
-        self.maxpool4 = nn.MaxPool1d(kernel_size=4,stride=4)
+  #split the dataset into training and validation based on the one subject we are leaving out
+  train_dataset = Subset(EEG_whole_Dataset, to_be_kept)
+  val_dataset = Subset(EEG_whole_Dataset, to_be_removed)
 
-        
-        self.relu = nn.LeakyReLU(0.1)
-
-        
-        self.fc1 = nn.Linear(in_features=448,out_features=256)#in_features=4*(self.chunk_size-8)
-        self.dropout1 = nn.Dropout(p=0.5)
-
-        self.fc2 = nn.Linear(in_features=256, out_features=64)
-        self.dropout2 = nn.Dropout(p=0.5)
-
-        self.fc3 = nn.Linear(in_features=64, out_features=16)
-        self.fc4 = nn.Linear(in_features=16, out_features=2)
-        self.softmax = nn.Softmax(dim=1)
-
-    def forward(self, x):
-
-        x = self.relu(self.maxpool1(self.norm1(self.conv1(x))))
-
-        x = self.relu(self.maxpool2(self.norm2(self.conv2(x))))
-        
-        x = self.relu(self.maxpool3(self.norm3(self.conv3(x))))
-        
-        x = self.relu(self.maxpool4(self.norm4(self.conv4(x))))
-        
-        x = torch.flatten(x, 1) # flatten all dimensions except the batch dimensi
-        
-        x = self.dropout1(self.fc1(x))
-        x = self.dropout2(self.fc2(x))
-        x = self.fc3(x)
-
-        x = self.softmax(self.fc4(x))
-        return x
+  return train_dataset, val_dataset

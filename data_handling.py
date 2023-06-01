@@ -4,6 +4,7 @@ import glob
 from torch.utils.data import Dataset
 import os
 import pandas as pd
+
 class EEGDataset(Dataset):
 
   def __init__(self, data_path, chunk_size=1000):

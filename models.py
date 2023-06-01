@@ -1,13 +1,7 @@
-'''
-This file contains the deep learning models used in the project.
-- All models are implemented using PyTorch and are subclasses of nn.Module.
-- Note that the model architecture essentially has to be hard-coded so that means for different datatypes, we need to write different models.
-for clinical EEG with ~60 channels, we have one architecture and for wearable EEG with 4 channels, we need a new architecture (adapted from the other one).
 
-I've put the existing model for the ~60 channels below, but I haven't formatted or managed the libraries for you. 
-'''
-import torch.nn as nn
 import torch
+import torch.nn as nn
+
 
 class PD_CNN(nn.Module):
 
@@ -63,3 +57,13 @@ class PD_CNN(nn.Module):
 
         x = self.softmax(self.fc4(x))
         return x
+    
+
+'''
+This file contains the deep learning models used in the project.
+- All models are implemented using PyTorch and are subclasses of nn.Module.
+- Note that the model architecture essentially has to be hard-coded so that means for different datatypes, we need to write different models.
+for clinical EEG with ~60 channels, we have one architecture and for wearable EEG with 4 channels, we need a new architecture (adapted from the other one).
+
+I've put the existing model for the ~60 channels below, but I haven't formatted or managed the libraries for you. 
+'''
