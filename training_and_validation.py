@@ -14,9 +14,9 @@ import torch
 import torch.optim as optim # optimzer
 import pandas as pd
 import models
-from models import PD_CNN
+from models import PD_CNN, PD_LSTM
 
-def train(model,train_dataloader, val_dataloader, epochs=30, learning_rate=0.0001, training_loss_tracker=[], val_loss_tracker=[], device="cpu"):
+def train_with_validation(model,train_dataloader, val_dataloader, epochs=30, learning_rate=0.0001, training_loss_tracker=[], val_loss_tracker=[], device="cpu"):
     '''
     INPUTS:
       model(nn.Module): here we will pass PDNet to the training loop.
@@ -101,7 +101,7 @@ def train(model,train_dataloader, val_dataloader, epochs=30, learning_rate=0.000
 
 
 #testing the performance
-def validate(model, valloader,threshold=0.5,batch_size=8, supress_output=False, device='cpu'):
+def validate(model, valloader,threshold=0.5,supress_output=False, device='cpu'):
   '''
     INPUTS:
       model(nn.Module): here we will pass PDNet to the training loop. 
@@ -333,7 +333,7 @@ def calculate_metrics(TP, FP, TN, FN):
 
     return accuracy, f1_score, sensitivity, specficity
 
-def loso_cross_validation(filename_list, EEG_whole_Dataset, model='CNN', epochs=1, batch_size=1, num_workers=2, learning_rate=0.0001, chunk_size=2500, device='cpu', supress_output=False):
+def loso_cross_validation(filename_list, EEG_whole_Dataset, model_type='CNN', epochs=1, batch_size=1, num_workers=2, learning_rate=0.0001, chunk_size=2500, device='cpu', supress_output=False):
    ##################### CROSS VALIDATION ##############
   '''
   Here, a for loop will iterate through every object in the whole dataset. Using the filename, it will determine the
@@ -359,8 +359,10 @@ def loso_cross_validation(filename_list, EEG_whole_Dataset, model='CNN', epochs=
     del train_dataset, val_dataset #free up memory
 
     #create a model
-    if model == 'CNN':
+    if model_type == 'CNN':
       model = PD_CNN(chunk_size=chunk_size).to(device)
+    elif model_type == 'LSTM':
+      model = PD_LSTM(device=device).to(device)
     else:
        assert ValueError('Model not recognized')
     model.train()
@@ -436,3 +438,172 @@ def loso_split(EEG_whole_Dataset, leave_out):
   val_dataset = Subset(EEG_whole_Dataset, to_be_removed)
 
   return train_dataset, val_dataset
+
+def train(model,train_dataloader, epochs=30, learning_rate=0.0001, training_loss_tracker=[], device="cpu"):
+    ''' Method to perform a training session with no validation feedback. meant to be a followup to a CV/hyperparameter search
+    INPUTS:
+      model(nn.Module): here we will pass PDNet to the training loop.
+      train_dataloader(Dataloader): here we will pass the torch.utils.dataloader.Dataloader containing all the training batches. 
+      epochs(int): the total number of epochs to train for
+      learning_rate(float): training hyperparameter defines the rate at which the optimizer will learn
+      training_loss_tracker(list): list containing float values of training loss from previous training. The length of this list
+      will be taken as the current epoch number.
+
+    OUTPUTS:
+      model(nn.Module): updated network after being trained.
+      training_loss_tracker(list): updated list containing float values of training loss from previous training. 
+
+    '''
+    assert epochs > len(training_loss_tracker), 'Loss tracker is already equal to or greater than epochs'
+
+    #define loss function and optimizer
+    criterion = nn.CrossEntropyLoss(weight=torch.tensor([0.5,0.5]).to(device=device)) #you can adjust weights. first number is applied to PD and the second number to Control
+    optimizer = optim.Adam(model.parameters(), lr=learning_rate)
+
+    current_epoch = len(training_loss_tracker)
+    counter = 0
+
+    #here, we take Epoch in a deep learning sense (i.e. iteration of training over the whole dataset)
+    for epoch in range(current_epoch, epochs): 
+        
+        running_loss = 0.0
+        counter = 0
+        for i, data in enumerate(train_dataloader, 0):
+            # get the inputs; data is a list of [inputs, labels]
+            inputs, labels, filename = data
+            inputs, labels = torch.permute(inputs,(0,1,2)).to(device), labels.to(torch.float32).to(device) #send them to the GPU
+            
+            batch_size = inputs.shape[0]
+            # zero the parameter gradients
+            optimizer.zero_grad()
+            
+            # forward 
+            outputs = model(inputs)
+
+            #Apply L2 Regularization. Replace pow(2.0) with abs() for L1 regularization
+            l2_lambda = 0.001
+            l2_norm = sum(p.pow(2.0).sum() for p in model.parameters())
+                  
+            #loss + backward + optimize
+            loss = criterion(outputs,labels) + l2_lambda*l2_norm
+            loss.backward()
+            optimizer.step()
+            
+            running_loss += loss.item()
+            counter += 1
+          
+        
+
+    print('Finished Training Session')
+    #print('Time elapsed in miliseconds: ', start.elapsed_time(end))  # milliseconds
+    print('The training loss at the end of this session is: ',loss.item())
+
+    return model, training_loss_tracker
+
+
+
+def test_subjectwise(trained_model, test_data_src, filename_list):
+   
+  trained_model.eval()
+  correct_votes, incorrect_votes, unsure_votes = 0,0,0
+  true_positives, false_positives, true_negatives, false_negatives = 0,0,0,0
+  subject_TP, subject_FP, subject_TN, subject_FN = 0, 0, 0, 0
+  
+  
+
+
+  #leave_out will be 
+  for filename in filename_list:
+    
+    
+    print('Performing testing on subject number: ', filename.split('.')[0])
+
+    #make dataset
+    single_subject_dataset = EEGDataset(data_path=(test_data_src+filename))
+    single_subject_dataloader = DataLoader(single_subject_dataset, shuffle=False,  batch_size=1)
+
+    
+    TP, FP, TN, FN, vote, seq = validate(model=trained_model, valloader=single_subject_dataloader,threshold=0.5, supress_output=True)
+    #list_of_sequences.append(seq)  
+
+    #add to the total counters
+    true_positives += TP
+    false_positives += FP
+    true_negatives += TN
+    false_negatives += FN
+
+    #see what the vote was
+    if vote=='Correct':
+      correct_votes += 1
+      #determine if the vote was positive or negative
+      if TP > 0:
+        subject_TP += 1
+      elif TN > 0:
+        subject_TN += 1
+      else:
+        ValueError('Vote is correct but no TP or TN')
+
+    elif vote=='Incorrect':
+      incorrect_votes += 1
+      #detemine if the vote was positive or negative
+      if FP > 0:
+        subject_FP += 1
+      elif FN > 0:
+        subject_FN += 1
+      else:
+        ValueError('Vote is incorrect but no FP or FN')
+    elif vote=='Unsure':
+      unsure_votes += 1
+    else:
+       ValueError('Vote is not one of the three options')
+    
+
+  #aggregate the results
+  epoch_conf_mat = [true_positives, false_positives, true_negatives, false_negatives]
+  sub_conf_mat = [subject_TP, subject_FP, subject_TN, subject_FN]
+  votes = [correct_votes, incorrect_votes, unsure_votes]
+
+  #return the aggregated results
+  return  epoch_conf_mat, sub_conf_mat, votes
+
+
+def save_testing_results(epoch_conf_mat, sub_conf_mat, votes, results_dir='./testing_results/', experiment_name='testing_results', replicate=0):
+   
+   #assert that the last character of results_dir is a '/'
+  assert results_dir[-1] == '/', 'results_dir must end with a /'
+
+  #confirm the data is there
+  print(epoch_conf_mat)
+
+  #open a new csv file
+  csv = open(results_dir+experiment_name+'_rep'+str(replicate)+'.csv', 'w')
+
+  #write final metrics to the first line of the csv
+  csv.write('true_positives, false_positives, true_negatives, false_negatives \n')
+  for result in epoch_conf_mat:
+      csv.write(str(result)+',')
+  csv.write('\n')
+
+  for result in sub_conf_mat:
+      csv.write(str(result)+',')
+  csv.write('\n')
+  
+  csv.write('correct_votes, incorrect_votes, unsure_votes \n')
+  for result in votes:
+      csv.write(str(result)+',')
+  csv.write('\n')
+
+  return csv
+  
+
+
+def initialize_model(model_type='CNN', device='cpu'):
+  if model_type == 'CNN':
+    model = PD_CNN().to(device)   
+  elif model_type == 'LSTM':
+    model = PD_LSTM().to(device)
+  else:
+    ValueError('Model type not recognized')
+  
+
+  return model

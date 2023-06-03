@@ -7,7 +7,7 @@ import pandas as pd
 
 class EEGDataset(Dataset):
 
-  def __init__(self, data_path, chunk_size=1000):
+  def __init__(self, data_path, chunk_size=2500):
     """
         Args:
             data_path (string): Directory with the EEG training data. Filenames in this dir must begin with "PD" or "Control" to assign labels correctly. Must be in .csv files. 
