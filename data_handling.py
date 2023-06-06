@@ -24,10 +24,8 @@ class EEGDataset(Dataset):
       #create the datapaths
       self.data_path = data_path  
       self.data_list = glob.glob(self.data_path + "*.csv")
-
-      
-
       self.files = glob.glob(self.data_path+ '*.csv')
+
 
     else:
       self.files = [data_path]
@@ -91,7 +89,15 @@ class EEGDataset(Dataset):
     eeg_dataframe = self.normalized_df_list[idx]
     
     #determine whether that subject is control or PD
-    filename = self.label_list[idx].split('/')[-1]
+    from sys import platform
+    if platform == 'win32':
+        #filename = os.path.normpath(self.label_list[idx]).split(os.path.sep)[-1]
+        filename = self.label_list[idx].split('\\')[-1]
+    elif platform=="linux" or platform =="linux2":
+        filename = self.label_list[idx].split('/')[-1]
+    elif platform.startswith('darwin'):
+        filename = self.label_list[idx].split('/')[-1]
+    
     
     # this is the string containing the filename. index first 2 chars to see if PD.
     if filename[0:2]=='PD':
@@ -101,8 +107,8 @@ class EEGDataset(Dataset):
       PD_label = 'CTL'
     # if neither, throw an error
     else:
-      print(filename[0:2])
-      print(filename[0:7])
+      print(filename[0:5])
+      print(filename[0:8])
       assert False, 'there is a problem finding the label'
 
     #convert label to tensor using class map

@@ -1,7 +1,7 @@
 import os
 import random
 from training_and_validation import loso_cross_validation
-
+from tqdm import tqdm
 
 
 
@@ -44,7 +44,7 @@ def make_csv_from_log(log, final_metrics, filename='CV', save_path='./training_r
     return csv
 
 
-def perform_random_hyperparameter_search(EEG_dataset, leave_one_out_list,  sample_size=60, search_title='CNN_hyperparameter_search/', save_path='./training_results/', batch_min_max = (1,32), epoch_min_max=(1,2),learning_rate_min_max=(0.00001,0.1), model_type='CNN', supress_output=True, device='cpu'):
+def perform_random_hyperparameter_search(EEG_dataset, leave_one_out_list,  sample_size=60, search_title='CNN_hyperparameter_search/', save_path='./training_results/', batch_min_max = (1,32), epoch_min_max=(5,50),learning_rate_min_max=(0.00001,0.1), model_type='CNN', supress_output=True, device='cpu'):
     
     if os.path.exists(save_path)==False:
         #make folder to store results
@@ -58,9 +58,12 @@ def perform_random_hyperparameter_search(EEG_dataset, leave_one_out_list,  sampl
         print('The number of files in the directory is greater than the sample size. No hyperparameter search will be performed.')
         return
 
+    
     #loop from num_files to sample_size
     for i in range(num_files, sample_size):
+        
 
+        print('-----------------running replicate #', i, '-------------------------')
         #set hyperparameters
         batch_size_min, batch_size_max = batch_min_max
         epochs_min, epochs_max = epoch_min_max
@@ -82,6 +85,7 @@ def perform_random_hyperparameter_search(EEG_dataset, leave_one_out_list,  sampl
 
         #save results
         make_csv_from_log(cv_log, total_metrics, filename=configuration, save_path=save_path)
+        
 
 
 def find_best_hyperparmeter_combo(dir='./training_results/CNN_hyperparameter_search/'):

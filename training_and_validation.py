@@ -15,6 +15,7 @@ import torch.optim as optim # optimzer
 import pandas as pd
 import models
 from models import PD_CNN, PD_LSTM
+from tqdm import tqdm
 
 def train_with_validation(model,train_dataloader, val_dataloader, epochs=30, learning_rate=0.0001, training_loss_tracker=[], val_loss_tracker=[], device="cpu"):
     '''
@@ -333,7 +334,7 @@ def calculate_metrics(TP, FP, TN, FN):
 
     return accuracy, f1_score, sensitivity, specficity
 
-def loso_cross_validation(filename_list, EEG_whole_Dataset, model_type='CNN', epochs=1, batch_size=1, num_workers=2, learning_rate=0.0001, chunk_size=2500, device='cpu', supress_output=False):
+def loso_cross_validation(filename_list, EEG_whole_Dataset, model_type='CNN', epochs=1, batch_size=1, num_workers=1, learning_rate=0.0001, chunk_size=2500, device='cpu', supress_output=False):
    ##################### CROSS VALIDATION ##############
   '''
   Here, a for loop will iterate through every object in the whole dataset. Using the filename, it will determine the
@@ -345,11 +346,13 @@ def loso_cross_validation(filename_list, EEG_whole_Dataset, model_type='CNN', ep
   true_positives, false_positives, true_negatives, false_negatives = 0,0,0,0
   
   log = []
-
+  print('tracker for the subjects')
   #leave_out will be the subject we validate on
-  for leave_out in filename_list:
+  #with tqdm(total=len(filename_list), desc='Subjects completed:', position=1) as inner_pbar:
 
-    print('Running a fold while leaving out: ', leave_out)
+  for leave_out in tqdm(filename_list, total=len(filename_list)) : 
+    
+    #print('Running a fold while leaving out: ', leave_out)
     
     #make a training and validation dataset
     train_dataset, val_dataset = loso_split(EEG_whole_Dataset, leave_out)
@@ -364,7 +367,7 @@ def loso_cross_validation(filename_list, EEG_whole_Dataset, model_type='CNN', ep
     elif model_type == 'LSTM':
       model = PD_LSTM(device=device).to(device)
     else:
-       assert ValueError('Model not recognized')
+      assert ValueError('Model not recognized')
     model.train()
 
     #perform one fold of training and validation
@@ -385,6 +388,8 @@ def loso_cross_validation(filename_list, EEG_whole_Dataset, model_type='CNN', ep
       unsure_votes +=1
 
     log.append((leave_out, TP, FP, TN, FN, vote))
+    #inner_pbar.update(1)  
+      
 
   #print the results 
   print('total correct subject classifications: ', correct_votes)
