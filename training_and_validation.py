@@ -195,11 +195,13 @@ def cross_train(model, train_dataloader, val_dataloader, epochs=23, learning_rat
         vote (str): correct/incorrect
     '''
     
-
+    model = model.float()
     #define loss function and optimizer
     criterion = nn.CrossEntropyLoss(weight=torch.tensor([0.5,0.5]).to(device))
     optimizer = optim.Adam(model.parameters(), lr=learning_rate)
-
+    criterion = criterion.float()
+    
+    
     #start a timer
     #start = torch.cuda.Event(enable_timing=True)
     #end = torch.cuda.Event(enable_timing=True)
@@ -207,6 +209,7 @@ def cross_train(model, train_dataloader, val_dataloader, epochs=23, learning_rat
     #start.record()
     counter = 0
 
+    
     ########################## Training ########################################
     for epoch in range(epochs):  # loop over the dataset multiple times
         
@@ -217,14 +220,14 @@ def cross_train(model, train_dataloader, val_dataloader, epochs=23, learning_rat
             
             # get the inputs; data is a list of [inputs, labels]
             inputs, labels, filename = data
-            inputs, labels = torch.permute(inputs,(0,1,2)).to(device), labels.to(torch.float32).to(device) #send them to the GPU
-            
+            inputs, labels = torch.permute(inputs,(0,1,2)).to(device), labels.to(device) #send them to the GPU
+            labels = labels.to(torch.long)
             batch_size = inputs.shape[0]
             # zero the parameter gradients
             optimizer.zero_grad()
             #labels = int(labels)
             # forward 
-            outputs = model(inputs)
+            outputs = model(inputs.float())
 
             #Regularization Replaces pow(2.0) with abs() for L1 regularization
     
@@ -257,7 +260,8 @@ def cross_train(model, train_dataloader, val_dataloader, epochs=23, learning_rat
         #binarize output
         output[output>threshold] = 1
         output[output<=threshold] = 0        
-
+        print('output ' , output)
+        print('labels', labels)
         #designate each sample to a confusion matrix label
         for j in range(0,len(output)):
           if (output[j-1,0] == 1) and (labels[j-1,0] == 1):
@@ -355,12 +359,25 @@ def loso_cross_validation(filename_list, EEG_whole_Dataset, model_type='CNN', ep
     #print('Running a fold while leaving out: ', leave_out)
     
     #make a training and validation dataset
-    train_dataset, val_dataset = loso_split(EEG_whole_Dataset, leave_out)
-    #convert datasets to dataloaders and delete the datasets to free up memory
-    train_dataloader = DataLoader(train_dataset, batch_size=batch_size, shuffle=True, num_workers=num_workers, pin_memory=True)
-    val_dataloader = DataLoader(val_dataset, batch_size=batch_size, shuffle=True, num_workers=num_workers, pin_memory=True)
-    del train_dataset, val_dataset #free up memory
+    
+    if isinstance(EEG_whole_Dataset, torch.utils.data.TensorDataset):
+      print('splitting tensor dataset')
+      train_dataset, val_dataset = loso_split_tensor(EEG_whole_Dataset, leave_out)
+      #convert datasets to dataloaders and delete the datasets to free up memory
+      train_dataloader = DataLoader(train_dataset, batch_size=batch_size, shuffle=True, num_workers=num_workers)
+      val_dataloader = DataLoader(val_dataset, batch_size=batch_size, shuffle=True, num_workers=num_workers)
+    
+    elif isinstance(EEG_whole_Dataset, torch.utils.data.Dataset):
+      print('splitting torch dataset')
+      train_dataset, val_dataset = loso_split(EEG_whole_Dataset, leave_out)
+      #convert datasets to dataloaders and delete the datasets to free up memory
+      train_dataloader = DataLoader(train_dataset, batch_size=batch_size, shuffle=True, num_workers=num_workers, pin_memory=True)
+      val_dataloader = DataLoader(val_dataset, batch_size=batch_size, shuffle=True, num_workers=num_workers, pin_memory=True)
+    
+    else:
+      TypeError, 'unable to identify dataset format'
 
+    
     #create a model
     if model_type == 'CNN':
       model = PD_CNN(chunk_size=chunk_size).to(device)
@@ -443,6 +460,34 @@ def loso_split(EEG_whole_Dataset, leave_out):
   val_dataset = Subset(EEG_whole_Dataset, to_be_removed)
 
   return train_dataset, val_dataset
+
+def loso_split_tensor(whole_dataset_tensor, leave_out):
+  
+
+  #iterate through the whole_dataset_tensor and find which indecies belong to the leave_out subject  
+  to_be_removed = []
+
+  for index in range(len(whole_dataset_tensor)):
+    #get the filename of the sample. this allows us to determine the subject number
+    subj_id = whole_dataset_tensor[index][2]
+    
+    if subj_id.item() == float(leave_out.split('.')[0].split('_')[1]):
+      
+      to_be_removed.append(index)
+
+    
+  #now we have a list of all the indices to be removed. We can use this to make a list of all the indices to be kept
+  complete_list = range(len(whole_dataset_tensor))
+  to_be_kept = [x for x in complete_list if x not in to_be_removed]
+
+  #split the dataset into training and validation based on the one subject we are leaving out
+  training_dataset = Subset(whole_dataset_tensor, to_be_kept)
+  validation_dataset = Subset(whole_dataset_tensor, to_be_removed)
+
+
+  return training_dataset, validation_dataset
+
+
 
 def train(model,train_dataloader, epochs=30, learning_rate=0.0001, training_loss_tracker=[], device="cpu"):
     ''' Method to perform a training session with no validation feedback. meant to be a followup to a CV/hyperparameter search

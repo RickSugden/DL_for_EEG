@@ -164,17 +164,7 @@ class EEGNet(nn.Module):
 
         return x
 
-device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
 
-input_tensor = torch.rand([8, 60, 2500]).to(device)
-print(input_tensor.size())
-
-channels = input_tensor.size(1)
-time_points = input_tensor.size(2)
-network = EEGNet(channels, time_points).to(device)
-
-output_tensor = network(input_tensor)
-print(output_tensor.shape)
 
 
 '''
