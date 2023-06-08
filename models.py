@@ -102,6 +102,79 @@ class PD_LSTM(nn.Module):
     out = self.fc(out) #Final Output
     output = self.softmax(out)
     return output
+  
+
+class EEGNet(nn.Module):
+    def __init__(self, channels, time_points):
+        super(EEGNet, self).__init__()
+        self.T = time_points
+
+        # Layer 1
+        self.conv1 = nn.Conv2d(1, 16, (channels, 60), padding=0)
+        self.batchnorm1 = nn.BatchNorm2d(16, False)
+
+        # Layer 2
+        self.padding1 = nn.ZeroPad2d((16, 17, 0, 1))
+        self.conv2 = nn.Conv2d(16, 4, (2, 32))
+        self.batchnorm2 = nn.BatchNorm2d(4, False)
+        self.pooling2 = nn.MaxPool2d((2, 2))
+
+        # Layer 3
+        self.padding2 = nn.ZeroPad2d((2, 1, 4, 3))
+        self.conv3 = nn.Conv2d(4, 4, (8, 2))
+        self.batchnorm3 = nn.BatchNorm2d(4, False)
+        self.pooling3 = nn.MaxPool2d((2, 2))
+
+        # FC Layer
+        self.fc1 = None  # We'll initialize this later
+
+    def forward(self, x):
+        x = x.view(x.shape[0], 1, x.shape[1], x.shape[2])  # Reshape the input
+
+        # Layer 1
+        x = F.elu(self.conv1(x))
+        x = self.batchnorm1(x)
+        x = F.dropout(x, 0.25)
+        x = x.permute(0, 1, 3, 2)  # Revised permute operation
+
+        # Layer 2
+        x = self.padding1(x)
+        x = F.elu(self.conv2(x))
+        x = self.batchnorm2(x)
+        x = F.dropout(x, 0.25)
+        x = self.pooling2(x)
+
+        # Layer 3
+        x = self.padding2(x)
+        x = F.elu(self.conv3(x))
+        x = self.batchnorm3(x)
+        x = F.dropout(x, 0.25)
+        x = self.pooling3(x)
+
+        # Flatten the output from the last layer
+        x = x.view(x.size(0), -1)
+
+        # If this is the first forward pass, initialize self.fc1 based on the size of x
+        if self.fc1 is None:
+            self.fc1 = nn.Linear(x.size(1), 2)
+
+        # FC Layer
+        x = torch.sigmoid(self.fc1(x))
+
+        return x
+
+device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
+
+input_tensor = torch.rand([8, 60, 2500]).to(device)
+print(input_tensor.size())
+
+channels = input_tensor.size(1)
+time_points = input_tensor.size(2)
+network = EEGNet(channels, time_points).to(device)
+
+output_tensor = network(input_tensor)
+print(output_tensor.shape)
+
 
 '''
 This file contains the deep learning models used in the project.
