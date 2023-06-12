@@ -197,8 +197,6 @@ def cross_train(model, train_dataloader, val_dataloader, epochs=23, learning_rat
   
   model = model.float() #possible problem but probably fine
 
-  
-
   #define loss function and optimizer
   criterion = nn.CrossEntropyLoss(weight=torch.tensor([0.5,0.5]).to(device))
   optimizer = optim.Adam(model.parameters(), lr=learning_rate)
@@ -213,8 +211,8 @@ def cross_train(model, train_dataloader, val_dataloader, epochs=23, learning_rat
     start = torch.cuda.Event(enable_timing=True)
     end = torch.cuda.Event(enable_timing=True)
 
-  start.record()
-  
+    start.record()
+
   ########################## Training ########################################
   for epoch in range(epochs):  # loop over the dataset multiple times
       
@@ -397,8 +395,8 @@ def loso_cross_validation(filename_list, EEG_whole_Dataset, model_type='CNN', ep
     else:
       TypeError, 'unable to identify dataset format'
 
-    print('the whole dataset is stored on the cuda:0 device') if EEG_whole_Dataset[0][0].get_device()==0 else print('the whole dataset is stored on the cpu device')
-    print('the train dataset is stored on the cuda:0 device') if train_dataset[0][0].get_device()==0 else print('the train dataset is stored on the cpu device')
+    #print('the whole dataset is stored on the cuda:0 device') if EEG_whole_Dataset[0][0].get_device()==0 else print('the whole dataset is stored on the cpu device')
+    #print('the train dataset is stored on the cuda:0 device') if train_dataset[0][0].get_device()==0 else print('the train dataset is stored on the cpu device')
     
     #create a model
     if model_type == 'CNN':

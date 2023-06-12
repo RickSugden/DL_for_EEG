@@ -65,7 +65,7 @@ def perform_random_hyperparameter_search(EEG_dataset, leave_one_out_list,  sampl
         
 
         print('-----------------running replicate #', i, '-------------------------')
-        print('the EEG dataset is stored on the cuda:0 device') if EEG_dataset[0][0].get_device()==0 else print('the EEG dataset is stored on the cpu device')
+        #print('the EEG dataset is stored on the cuda:0 device') if EEG_dataset[0][0].get_device()==0 else print('the EEG dataset is stored on the cpu device')
         #set hyperparameters
         batch_size_min, batch_size_max = batch_min_max
         epochs_min, epochs_max = epoch_min_max
@@ -81,7 +81,7 @@ def perform_random_hyperparameter_search(EEG_dataset, leave_one_out_list,  sampl
         configuration = model_type+'_batch_size_'+str(batch_size)+'_epochs_'+str(epochs)+'_learning_rate_'+str(round(learning_rate,5))
 
         print('hyperparameter configuration: ', configuration)
-        print('the EEG dataset is stored on the ', EEG_dataset[0][0].get_device(), ' device')
+        
         #perform cross validation
         cv_log, total_metrics = loso_cross_validation(filename_list=leave_one_out_list, EEG_whole_Dataset=EEG_dataset, model_type=model_type, 
                                                     epochs=epochs, batch_size=batch_size, learning_rate=learning_rate,
