@@ -1,0 +1,10 @@
+Data/*
+
+venv/*
+
+training_results/*
+testing_results/*
+
+__pycache__/*
+
+gitignore
