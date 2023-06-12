@@ -183,28 +183,29 @@ def validate(model, valloader,threshold=0.5,supress_output=False, device='cpu'):
 #cross train function for loso cross validation
 def cross_train(model, train_dataloader, val_dataloader, epochs=23, learning_rate=0.0001, num_workers=2,  threshold=0.5, chunk_size=2500, device='cpu', supress_output=False):
     '''
-      INPUTS:
-        model(nn.Module): here we will pass PDNet to the training loop.
-        train_dataloader(Dataloader): here we will pass the torch.utils.dataloader.Dataloader containing all the training batches. 
-        val_dataloader(Dataloader): here we will pass the torch.utils.dataloader.Dataloader containing all the validation batches. 
-        epochs(int): the total number of epochs to train for
-        learning_rate(float): training hyperparameter defines the rate at which the optimizer will learn
-        
-      OUTPUTS:
-        TP, FP, TN, FN (int): confusion matrix
-        vote (str): correct/incorrect
+    INPUTS:
+    model(nn.Module): here we will pass PDNet to the training loop.
+    train_dataloader(Dataloader): here we will pass the torch.utils.dataloader.Dataloader containing all the training batches. 
+    val_dataloader(Dataloader): here we will pass the torch.utils.dataloader.Dataloader containing all the validation batches. 
+    epochs(int): the total number of epochs to train for
+    learning_rate(float): training hyperparameter defines the rate at which the optimizer will learn
+      
+    OUTPUTS:
+    TP, FP, TN, FN (int): confusion matrix
+    vote (str): correct/incorrect
     '''
     
-    model = model.float()
+    model = model.float() #possible problem but probably fine
+
     #define loss function and optimizer
     criterion = nn.CrossEntropyLoss(weight=torch.tensor([0.5,0.5]).to(device))
     optimizer = optim.Adam(model.parameters(), lr=learning_rate)
     criterion = criterion.float()
     
-    
-    #start a timer
-    #start = torch.cuda.Event(enable_timing=True)
-    #end = torch.cuda.Event(enable_timing=True)
+    if device.startswith('cuda'):
+      #start a timer
+      start = torch.cuda.Event(enable_timing=True)
+      end = torch.cuda.Event(enable_timing=True)
 
     #start.record()
     counter = 0
@@ -220,8 +221,17 @@ def cross_train(model, train_dataloader, val_dataloader, epochs=23, learning_rat
             
             # get the inputs; data is a list of [inputs, labels]
             inputs, labels, filename = data
+            #print('the inputs is stored on the cuda:0 device') if inputs[0][0].get_device()==0 else print('the EEG dataset is stored on the cpu device')
+            #print('the labels is stored on the cuda:0 device') if labels[0].get_device()==0 else print('the EEG dataset is stored on the cpu device')
+            #print('the filename is stored on the cuda:0 device') if filename[0].get_device()==0 else print('the EEG dataset is stored on the cpu device')
+
             inputs, labels = torch.permute(inputs,(0,1,2)).to(device), labels.to(device) #send them to the GPU
-            labels = labels.to(torch.long)
+            #labels = labels.to(torch.long)
+            
+            #convert labels of 0 to [0, 1] and labels of 1 to [1, 0]
+            labels = torch.unsqueeze(labels, 1)
+            labels = torch.cat((labels, 1-labels), 1)
+
             batch_size = inputs.shape[0]
             # zero the parameter gradients
             optimizer.zero_grad()
@@ -231,17 +241,24 @@ def cross_train(model, train_dataloader, val_dataloader, epochs=23, learning_rat
 
             #Regularization Replaces pow(2.0) with abs() for L1 regularization
     
-            l2_lambda = 0.001
-            l2_norm = sum(p.pow(2.0).sum() for p in model.parameters())
-                  
+            #l2_lambda = 0.001
+            #l2_norm = sum(p.pow(2.0).sum() for p in model.parameters())
+            
+            
             #loss + backward + optimize
-            loss = criterion(outputs,labels) + l2_lambda*l2_norm
+            loss = criterion(outputs,labels) #+ l2_lambda*l2_norm
             loss.backward()
             optimizer.step()
             
             running_loss += loss.item()
             counter += 1
-        
+
+            # whatever you are timing goes here
+            if device.startswith('cuda'):
+              end.record()
+              # Waits for everything to finish running
+              torch.cuda.synchronize()
+          
     ################################ Validation ##############################
     model.eval()
     TP, FP, TN, FN = 0, 0, 0, 0
@@ -260,8 +277,13 @@ def cross_train(model, train_dataloader, val_dataloader, epochs=23, learning_rat
         #binarize output
         output[output>threshold] = 1
         output[output<=threshold] = 0        
-        print('output ' , output)
-        print('labels', labels)
+        
+        #convert labels of 0 to [0, 1] and labels of 1 to [1, 0]
+        labels = torch.unsqueeze(labels, 1)
+        labels = torch.cat((labels, 1-labels), 1)
+        
+
+
         #designate each sample to a confusion matrix label
         for j in range(0,len(output)):
           if (output[j-1,0] == 1) and (labels[j-1,0] == 1):
@@ -282,10 +304,11 @@ def cross_train(model, train_dataloader, val_dataloader, epochs=23, learning_rat
       vote ='Unsure'
 
     # whatever you are timing goes here
-    #end.record()
+    if device.startswith('cuda'):
+      end.record()
+      # Waits for everything to finish running
+      torch.cuda.synchronize()
 
-    # Waits for everything to finish running
-    #torch.cuda.synchronize()
     if supress_output == False:
       print('The vote was: ', vote)
       print('true positives: ', TP)
@@ -338,14 +361,14 @@ def calculate_metrics(TP, FP, TN, FN):
 
     return accuracy, f1_score, sensitivity, specficity
 
-def loso_cross_validation(filename_list, EEG_whole_Dataset, model_type='CNN', epochs=1, batch_size=1, num_workers=1, learning_rate=0.0001, chunk_size=2500, device='cpu', supress_output=False):
-   ##################### CROSS VALIDATION ##############
+def loso_cross_validation(filename_list, EEG_whole_Dataset, model_type='CNN', epochs=1, batch_size=1, num_workers=0, learning_rate=0.0001, chunk_size=2500, device='cpu', supress_output=False):
+  ##################### CROSS VALIDATION ##############
   '''
   Here, a for loop will iterate through every object in the whole dataset. Using the filename, it will determine the
   subject number for the sample and make two subsets: validation using only the one subject number, and training using all other
   subject numbers. It will repeat this for each subject number.
   Epochs and Learning rate are adjustable below
-    '''
+  '''
   correct_votes, incorrect_votes, unsure_votes = 0,0,0
   true_positives, false_positives, true_negatives, false_negatives = 0,0,0,0
   
@@ -364,8 +387,8 @@ def loso_cross_validation(filename_list, EEG_whole_Dataset, model_type='CNN', ep
       print('splitting tensor dataset')
       train_dataset, val_dataset = loso_split_tensor(EEG_whole_Dataset, leave_out)
       #convert datasets to dataloaders and delete the datasets to free up memory
-      train_dataloader = DataLoader(train_dataset, batch_size=batch_size, shuffle=True, num_workers=num_workers)
-      val_dataloader = DataLoader(val_dataset, batch_size=batch_size, shuffle=True, num_workers=num_workers)
+      train_dataloader = DataLoader(train_dataset, batch_size=batch_size, shuffle=True, num_workers=0)
+      val_dataloader = DataLoader(val_dataset, batch_size=batch_size, shuffle=True, num_workers=0)
     
     elif isinstance(EEG_whole_Dataset, torch.utils.data.Dataset):
       print('splitting torch dataset')
@@ -377,6 +400,8 @@ def loso_cross_validation(filename_list, EEG_whole_Dataset, model_type='CNN', ep
     else:
       TypeError, 'unable to identify dataset format'
 
+    print('the whole dataset is stored on the cuda:0 device') if EEG_whole_Dataset[0][0].get_device()==0 else print('the whole dataset is stored on the cpu device')
+    print('the train dataset is stored on the cuda:0 device') if train_dataset[0][0].get_device()==0 else print('the train dataset is stored on the cpu device')
     
     #create a model
     if model_type == 'CNN':
