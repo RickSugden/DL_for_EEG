@@ -182,142 +182,139 @@ def validate(model, valloader,threshold=0.5,supress_output=False, device='cpu'):
 
 #cross train function for loso cross validation
 def cross_train(model, train_dataloader, val_dataloader, epochs=23, learning_rate=0.0001, num_workers=2,  threshold=0.5, chunk_size=2500, device='cpu', supress_output=False):
-    '''
-    INPUTS:
-    model(nn.Module): here we will pass PDNet to the training loop.
-    train_dataloader(Dataloader): here we will pass the torch.utils.dataloader.Dataloader containing all the training batches. 
-    val_dataloader(Dataloader): here we will pass the torch.utils.dataloader.Dataloader containing all the validation batches. 
-    epochs(int): the total number of epochs to train for
-    learning_rate(float): training hyperparameter defines the rate at which the optimizer will learn
+  '''
+  INPUTS:
+  model(nn.Module): here we will pass PDNet to the training loop.
+  train_dataloader(Dataloader): here we will pass the torch.utils.dataloader.Dataloader containing all the training batches. 
+  val_dataloader(Dataloader): here we will pass the torch.utils.dataloader.Dataloader containing all the validation batches. 
+  epochs(int): the total number of epochs to train for
+  learning_rate(float): training hyperparameter defines the rate at which the optimizer will learn
+    
+  OUTPUTS:
+  TP, FP, TN, FN (int): confusion matrix
+  vote (str): correct/incorrect
+  '''
+  
+  model = model.float() #possible problem but probably fine
+
+  
+
+  #define loss function and optimizer
+  criterion = nn.CrossEntropyLoss(weight=torch.tensor([0.5,0.5]).to(device))
+  optimizer = optim.Adam(model.parameters(), lr=learning_rate)
+  criterion = criterion.float()
+  
+  #decay scheduler
+  step_scheduler = torch.optim.lr_scheduler.StepLR(optimizer, step_size=10, gamma=0.5)
+
+
+  if device.startswith('cuda'):
+    #start a timer
+    start = torch.cuda.Event(enable_timing=True)
+    end = torch.cuda.Event(enable_timing=True)
+
+  start.record()
+  
+  ########################## Training ########################################
+  for epoch in range(epochs):  # loop over the dataset multiple times
       
-    OUTPUTS:
-    TP, FP, TN, FN (int): confusion matrix
-    vote (str): correct/incorrect
-    '''
+    running_loss = 0.0
     
-    model = model.float() #possible problem but probably fine
+    for data in train_dataloader:
+        
+      # get the inputs; data is a list of [inputs, labels]
+      inputs, labels, _ = data
+      
+      inputs, labels = torch.permute(inputs,(0,1,2)).to(device), labels.to(device) #send them to the GPU
+      
+      
+      #convert labels of 0 to [0, 1] and labels of 1 to [1, 0]
+      labels = torch.unsqueeze(labels, 1)
+      labels = torch.cat((labels, 1-labels), 1)
+      
+      # zero the parameter gradients
+      optimizer.zero_grad()
+      
+      # forward 
+      outputs = model(inputs.float())
 
-    #define loss function and optimizer
-    criterion = nn.CrossEntropyLoss(weight=torch.tensor([0.5,0.5]).to(device))
-    optimizer = optim.Adam(model.parameters(), lr=learning_rate)
-    criterion = criterion.float()
+      #Regularization Replaces pow(2.0) with abs() for L1 regularization
+      #l2_lambda = 0.001
+      #l2_norm = sum(p.pow(2.0).sum() for p in model.parameters())
+      
+      
+      #loss + backward + optimize
+      loss = criterion(outputs,labels) #+ l2_lambda*l2_norm
+      loss.backward()
+      optimizer.step()
+      
+      running_loss += loss.item()
+
+      # whatever you are timing goes here
+      if device.startswith('cuda'):
+        end.record()
+        # Waits for everything to finish running
+        torch.cuda.synchronize()
+
+    #learning rate scheduler decay
+    step_scheduler.step()
+        
+  ################################ Validation ##############################
+  model.eval()
+  TP, FP, TN, FN = 0, 0, 0, 0
+
+  for data in val_dataloader:
+
+    # get the inputs; data is a list of [inputs, labels]
+    inputs, labels, _ = data
+    inputs, labels = torch.permute(inputs,(0,1,2)).to(device), labels.to(torch.float32).to(device) #send them to the GPU
+
+
+    #forward
+    output = model(inputs)
+
+    #binarize output
+    output[output>threshold] = 1
+    output[output<=threshold] = 0        
     
-    if device.startswith('cuda'):
-      #start a timer
-      start = torch.cuda.Event(enable_timing=True)
-      end = torch.cuda.Event(enable_timing=True)
+    #convert labels of 0 to [0, 1] and labels of 1 to [1, 0]
+    labels = torch.unsqueeze(labels, 1)
+    labels = torch.cat((labels, 1-labels), 1)
 
-    #start.record()
-    counter = 0
+    #designate each sample to a confusion matrix label
+    for j in range(0,len(output)):
+      if (output[j-1,0] == 1) and (labels[j-1,0] == 1):
+        TP += 1
+      elif(output[j-1,0]==1) and (labels[j-1,0] == 0 ):
+        FP += 1
+      elif(output[j-1,0]==0) and (labels[j-1,0]== 1):
+        FN += 1
+      elif(output[j-1,0]==0) and (labels[j-1,0]== 0):
+        TN += 1
 
-    
-    ########################## Training ########################################
-    for epoch in range(epochs):  # loop over the dataset multiple times
-        
-        running_loss = 0.0
-        counter = 0
-        
-        for i, data in enumerate(train_dataloader, 0):
-            
-            # get the inputs; data is a list of [inputs, labels]
-            inputs, labels, filename = data
-            #print('the inputs is stored on the cuda:0 device') if inputs[0][0].get_device()==0 else print('the EEG dataset is stored on the cpu device')
-            #print('the labels is stored on the cuda:0 device') if labels[0].get_device()==0 else print('the EEG dataset is stored on the cpu device')
-            #print('the filename is stored on the cuda:0 device') if filename[0].get_device()==0 else print('the EEG dataset is stored on the cpu device')
+  #determine whether this subject was predicted correct or incorrect by majority vote
+  if (TP + TN) > (FP + FN):
+    vote = 'Correct'
+  elif (TP + TN) < (FP + FN):
+    vote = 'Incorrect'
+  else:
+    vote ='Unsure'
 
-            inputs, labels = torch.permute(inputs,(0,1,2)).to(device), labels.to(device) #send them to the GPU
-            #labels = labels.to(torch.long)
-            
-            #convert labels of 0 to [0, 1] and labels of 1 to [1, 0]
-            labels = torch.unsqueeze(labels, 1)
-            labels = torch.cat((labels, 1-labels), 1)
+  # whatever you are timing goes here
+  if device.startswith('cuda'):
+    end.record()
+    # Waits for everything to finish running
+    torch.cuda.synchronize()
 
-            batch_size = inputs.shape[0]
-            # zero the parameter gradients
-            optimizer.zero_grad()
-            #labels = int(labels)
-            # forward 
-            outputs = model(inputs.float())
+  if supress_output == False:
+    print('The vote was: ', vote)
+    print('true positives: ', TP)
+    print('false positives: ',FP)
+    print('true negatives: ',TN)
+    print('false negatives', FN)
+  
 
-            #Regularization Replaces pow(2.0) with abs() for L1 regularization
-    
-            #l2_lambda = 0.001
-            #l2_norm = sum(p.pow(2.0).sum() for p in model.parameters())
-            
-            
-            #loss + backward + optimize
-            loss = criterion(outputs,labels) #+ l2_lambda*l2_norm
-            loss.backward()
-            optimizer.step()
-            
-            running_loss += loss.item()
-            counter += 1
-
-            # whatever you are timing goes here
-            if device.startswith('cuda'):
-              end.record()
-              # Waits for everything to finish running
-              torch.cuda.synchronize()
-          
-    ################################ Validation ##############################
-    model.eval()
-    TP, FP, TN, FN = 0, 0, 0, 0
-
-    for i, data in enumerate(val_dataloader, 0):
-
-        # get the inputs; data is a list of [inputs, labels]
-        inputs, labels, filename = data
-        inputs, labels = torch.permute(inputs,(0,1,2)).to(device), labels.to(torch.float32).to(device) #send them to the GPU
-              
-        batch_size = inputs.shape[0]
-
-        #forward
-        output = model(inputs)
-
-        #binarize output
-        output[output>threshold] = 1
-        output[output<=threshold] = 0        
-        
-        #convert labels of 0 to [0, 1] and labels of 1 to [1, 0]
-        labels = torch.unsqueeze(labels, 1)
-        labels = torch.cat((labels, 1-labels), 1)
-        
-
-
-        #designate each sample to a confusion matrix label
-        for j in range(0,len(output)):
-          if (output[j-1,0] == 1) and (labels[j-1,0] == 1):
-              TP += 1
-          elif(output[j-1,0]==1) and (labels[j-1,0] == 0 ):
-              FP += 1
-          elif(output[j-1,0]==0) and (labels[j-1,0]== 1):
-              FN += 1
-          elif(output[j-1,0]==0) and (labels[j-1,0]== 0):
-              TN += 1
-
-    #determine whether this subject was predicted correct or incorrect by majority vote
-    if (TP + TN) > (FP + FN):
-      vote = 'Correct'
-    elif (TP + TN) < (FP + FN):
-      vote = 'Incorrect'
-    else:
-      vote ='Unsure'
-
-    # whatever you are timing goes here
-    if device.startswith('cuda'):
-      end.record()
-      # Waits for everything to finish running
-      torch.cuda.synchronize()
-
-    if supress_output == False:
-      print('The vote was: ', vote)
-      print('true positives: ', TP)
-      print('false positives: ',FP)
-      print('true negatives: ',TN)
-      print('false negatives', FN)
-   
-
-    return TP, FP, TN, FN, vote, model
+  return TP, FP, TN, FN, vote, model
 
 
 def calculate_metrics(TP, FP, TN, FN):

@@ -2,6 +2,7 @@ import os
 import random
 from training_and_validation import loso_cross_validation
 from tqdm import tqdm
+from scipy.stats import loguniform
 
 
 
@@ -73,7 +74,8 @@ def perform_random_hyperparameter_search(EEG_dataset, leave_one_out_list,  sampl
         #select random hyperparameters
         batch_size = random.randint(batch_size_min, batch_size_max)
         epochs = random.randint(epochs_min, epochs_max)
-        learning_rate = random.uniform(learning_rate_min, learning_rate_max)
+        # draw learning rate from a uniform distribution on a log scale
+        learning_rate = loguniform.rvs(learning_rate_min, learning_rate_max, size=1)[0]
         
         #set experiment title
         configuration = model_type+'_batch_size_'+str(batch_size)+'_epochs_'+str(epochs)+'_learning_rate_'+str(round(learning_rate,5))
