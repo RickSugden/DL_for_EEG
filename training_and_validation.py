@@ -218,7 +218,7 @@ def cross_train(model, train_dataloader, val_dataloader, epochs=23, learning_rat
       
       
       #convert labels of 0 to [0, 1] and labels of 1 to [1, 0]
-      if labels.shape[1] ==0:
+      if len(labels.shape) < 2:
         labels = torch.unsqueeze(labels, 1)
         labels = torch.cat((labels, 1-labels), 1)
       
@@ -269,7 +269,7 @@ def cross_train(model, train_dataloader, val_dataloader, epochs=23, learning_rat
     output[output<=threshold] = 0        
     
     #convert labels of 0 to [0, 1] and labels of 1 to [1, 0]
-    if labels.shape[1] ==0:
+    if len(labels.shape) <2:
       labels = torch.unsqueeze(labels, 1)
       labels = torch.cat((labels, 1-labels), 1)
 
