@@ -1,12 +1,3 @@
-'''
-This is a method to train the model. It is not a part of the model itself, but it is a part of the training process.
-it takes in a model (nn.module), a training dataloader (torch.utils.dataloader.Dataloader), a validation dataloader (torch.utils.dataloader.Dataloader),
-epochs and learning rate are hyperparameters that you can adjust. The training_loss_tracker and val_loss_tracker are lists that will be updated with the loss
-so that we can visualize the training and validation loss over training iterations. that all works out of the box. 
-
-for now manage libraries, connect this to the main method and make the training loop compatible with the validation method below it, you might have 
-to change a couple things because i used multiple versions of the validation method, so not all training loops are yet compatible with the validation method. 
-'''
 from torch.utils.data import Dataset, DataLoader, random_split, Subset, RandomSampler
 from data_handling import EEGDataset
 import torch.nn as nn # basic building block for neural neteorks
@@ -14,7 +5,7 @@ import torch
 import torch.optim as optim # optimzer
 import pandas as pd
 import models
-from models import PD_CNN, PD_LSTM
+from models import PD_CNN, PD_LSTM, ResNet
 from tqdm import tqdm
 
 def train_with_validation(model,train_dataloader, val_dataloader, epochs=30, learning_rate=0.0001, training_loss_tracker=[], val_loss_tracker=[], device="cpu"):
@@ -227,8 +218,9 @@ def cross_train(model, train_dataloader, val_dataloader, epochs=23, learning_rat
       
       
       #convert labels of 0 to [0, 1] and labels of 1 to [1, 0]
-      labels = torch.unsqueeze(labels, 1)
-      labels = torch.cat((labels, 1-labels), 1)
+      if labels.shape[1] ==0:
+        labels = torch.unsqueeze(labels, 1)
+        labels = torch.cat((labels, 1-labels), 1)
       
       # zero the parameter gradients
       optimizer.zero_grad()
@@ -254,6 +246,7 @@ def cross_train(model, train_dataloader, val_dataloader, epochs=23, learning_rat
         # Waits for everything to finish running
         torch.cuda.synchronize()
 
+    
     #learning rate scheduler decay
     step_scheduler.step()
         
@@ -276,8 +269,9 @@ def cross_train(model, train_dataloader, val_dataloader, epochs=23, learning_rat
     output[output<=threshold] = 0        
     
     #convert labels of 0 to [0, 1] and labels of 1 to [1, 0]
-    labels = torch.unsqueeze(labels, 1)
-    labels = torch.cat((labels, 1-labels), 1)
+    if labels.shape[1] ==0:
+      labels = torch.unsqueeze(labels, 1)
+      labels = torch.cat((labels, 1-labels), 1)
 
     #designate each sample to a confusion matrix label
     for j in range(0,len(output)):
@@ -403,6 +397,8 @@ def loso_cross_validation(filename_list, EEG_whole_Dataset, model_type='CNN', ep
       model = PD_CNN(chunk_size=chunk_size).to(device)
     elif model_type == 'LSTM':
       model = PD_LSTM(device=device).to(device)
+    elif model_type == 'ResNet':
+      model = ResNet(n_classes=2, n_in=60, time_steps=chunk_size).to(device)
     else:
       assert ValueError('Model not recognized')
     model.train()

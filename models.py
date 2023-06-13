@@ -50,7 +50,7 @@ class PD_CNN(nn.Module):
         
         x = self.relu(self.maxpool4(self.norm4(self.conv4(x))))
         
-        x = torch.flatten(x, 1) # flatten all dimensions except the batch dimensi
+        x = torch.flatten(x, 1) # flatten all dimensions except the batch dimension
         
         x = self.dropout1(self.fc1(x))
         x = self.dropout2(self.fc2(x))
@@ -164,14 +164,56 @@ class EEGNet(nn.Module):
 
         return x
 
+class ResNet(nn.Module):
+    def __init__(self,n_in,n_classes,time_steps):
+        super(ResNet,self).__init__()
+        self.n_in = n_in
+        self.n_classes = n_classes
+        self.time_steps = time_steps
 
+        blocks  = [n_in,64,128,128]
+        self.blocks = nn.ModuleList()
+        for b,_ in enumerate(blocks[:-1]):
+            self.blocks.append(ResidualBlock(*blocks[b:b+2],self.time_steps))
+        
+        self.fc1 =  nn.Linear(blocks[-1]*self.time_steps,self.n_classes)
+        
+        
+    def forward(self, x: torch.Tensor):
 
+        for block in self.blocks:
+            x = block(x)
+  
+            
+        x = x.view(x.size(0), -1)
+    
+        x = self.fc1(x)
+        
+        x = F.log_softmax(x,1)
+        
+        return x.view(-1,self.n_classes)
+    
+class ResidualBlock(nn.Module):
+    def __init__(self,in_maps,out_maps,time_steps):
+        super(ResidualBlock,self).__init__()
+        self.in_maps  = in_maps
+        self.out_maps = out_maps
+        self.time_steps = time_steps
+        
+        self.conv1 = nn.Conv1d(self.in_maps, self.out_maps,7,padding=3)
+        self.bn1   = nn.BatchNorm1d(self.out_maps)
 
-'''
-This file contains the deep learning models used in the project.
-- All models are implemented using PyTorch and are subclasses of nn.Module.
-- Note that the model architecture essentially has to be hard-coded so that means for different datatypes, we need to write different models.
-for clinical EEG with ~60 channels, we have one architecture and for wearable EEG with 4 channels, we need a new architecture (adapted from the other one).
+        self.conv2 = nn.Conv1d(self.out_maps,self.out_maps,5,padding=2)
+        self.bn2   = nn.BatchNorm1d(self.out_maps)
+        
+        self.conv3 = nn.Conv1d(self.out_maps,self.out_maps,3,padding=1)
+        self.bn3   = nn.BatchNorm1d(self.out_maps)
 
-I've put the existing model for the ~60 channels below, but I haven't formatted or managed the libraries for you. 
-'''
+        
+    def forward(self,x):
+        x   = F.relu(self.bn1(self.conv1(x)))
+        inx = x
+        x   = F.relu(self.bn2(self.conv2(x)))
+        x   = F.relu(self.bn3(self.conv3(x))+inx)
+        
+        return x
