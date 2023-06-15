@@ -5,7 +5,7 @@ import torch
 import torch.optim as optim # optimzer
 import pandas as pd
 import models
-from models import PD_CNN, PD_LSTM, ResNet
+from models import PD_CNN, PD_LSTM, ResNet, EEGNet
 from tqdm import tqdm
 
 def train_with_validation(model,train_dataloader, val_dataloader, epochs=30, learning_rate=0.0001, training_loss_tracker=[], val_loss_tracker=[], device="cpu"):
@@ -233,6 +233,8 @@ def cross_train(model, train_dataloader, val_dataloader, epochs=23, learning_rat
       #l2_norm = sum(p.pow(2.0).sum() for p in model.parameters())
       
       
+      #print('outputs: ',outputs)
+      #print('labels', labels)
       #loss + backward + optimize
       loss = criterion(outputs,labels) #+ l2_lambda*l2_norm
       loss.backward()
@@ -399,10 +401,12 @@ def loso_cross_validation(filename_list, EEG_whole_Dataset, model_type='CNN', ep
       model = PD_LSTM(device=device).to(device)
     elif model_type == 'ResNet':
       model = ResNet(n_classes=2, n_in=60, time_steps=chunk_size).to(device)
+    elif model_type == 'EEGNet':
+      model = EEGNet(60, chunk_size).to(device)
     else:
-      assert ValueError('Model not recognized')
+      assert False, ValueError('Model not recognized')
     model.train()
-
+    
     #perform one fold of training and validation
     TP, FP, TN, FN, vote, model = cross_train(model, train_dataloader, val_dataloader, epochs=epochs, learning_rate=learning_rate, threshold=0.5, chunk_size=chunk_size, device=device, supress_output=supress_output)
 

@@ -111,56 +111,72 @@ class EEGNet(nn.Module):
         self.T = time_points
 
         # Layer 1
-        self.conv1 = nn.Conv2d(1, 16, (channels, 60), padding=0)
+        self.conv1 = nn.Conv2d(in_channels=1, out_channels=16, kernel_size=(1, 60), padding=0)
         self.batchnorm1 = nn.BatchNorm2d(16, False)
 
         # Layer 2
         self.padding1 = nn.ZeroPad2d((16, 17, 0, 1))
-        self.conv2 = nn.Conv2d(16, 4, (2, 32))
+        self.conv2 = nn.Conv2d(in_channels=1, out_channels=4, kernel_size=(2, 30))
         self.batchnorm2 = nn.BatchNorm2d(4, False)
-        self.pooling2 = nn.MaxPool2d((2, 2))
+        self.pooling2 = nn.MaxPool2d((2, 4))
 
         # Layer 3
         self.padding2 = nn.ZeroPad2d((2, 1, 4, 3))
         self.conv3 = nn.Conv2d(4, 4, (8, 2))
         self.batchnorm3 = nn.BatchNorm2d(4, False)
-        self.pooling3 = nn.MaxPool2d((2, 2))
+        self.pooling3 = nn.MaxPool2d((2, 4))
 
         # FC Layer
-        self.fc1 = None  # We'll initialize this later
+        #self.fc1 = None  # We'll initialize this later
+        self.fc1 = nn.Linear(2512, 2)
+        self.softmax= nn.Softmax(dim=1)
+
 
     def forward(self, x):
-        x = x.view(x.shape[0], 1, x.shape[1], x.shape[2])  # Reshape the input
+        
+        x = x.view(x.shape[0], 1, x.shape[2],  x.shape[1])  # Reshape the input
 
+        
         # Layer 1
         x = F.elu(self.conv1(x))
-        x = self.batchnorm1(x)
-        x = F.dropout(x, 0.25)
-        x = x.permute(0, 1, 3, 2)  # Revised permute operation
 
+        x = self.batchnorm1(x)
+
+        x = F.dropout(x, 0.25)
+        x = x.permute(0, 3, 1, 2)  # Revised permute operation
+    
+      
         # Layer 2
+        
         x = self.padding1(x)
+ 
         x = F.elu(self.conv2(x))
+
         x = self.batchnorm2(x)
+       
         x = F.dropout(x, 0.25)
         x = self.pooling2(x)
-
+   
         # Layer 3
+
         x = self.padding2(x)
+  
         x = F.elu(self.conv3(x))
+
         x = self.batchnorm3(x)
+       
         x = F.dropout(x, 0.25)
         x = self.pooling3(x)
-
+      
+   
         # Flatten the output from the last layer
-        x = x.view(x.size(0), -1)
-
-        # If this is the first forward pass, initialize self.fc1 based on the size of x
-        if self.fc1 is None:
-            self.fc1 = nn.Linear(x.size(1), 2)
+       
+        x = torch.flatten(x, 1) # flatten all dimensions except the batch dimension
+  
+        
 
         # FC Layer
-        x = torch.sigmoid(self.fc1(x))
+        x = self.softmax(self.fc1(x))
 
         return x
 
@@ -191,7 +207,7 @@ class ResNet(nn.Module):
         
         x = F.log_softmax(x,1)
         
-        return x.view(-1,self.n_classes)
+        return x #.view(-1,self.n_classes)
     
 class ResidualBlock(nn.Module):
     def __init__(self,in_maps,out_maps,time_steps):
