@@ -195,13 +195,13 @@ class ResNet(nn.Module):
         self.fc1 =  nn.Linear(blocks[-1]*self.time_steps,self.n_classes)
         self.softmax= nn.Softmax(dim=1)
 
-        
+      
         
     def forward(self, x: torch.Tensor):
 
         for block in self.blocks:
             x = block(x)
-  
+
             
         x = x.view(x.size(0), -1)
     
