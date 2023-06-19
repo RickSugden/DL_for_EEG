@@ -207,7 +207,7 @@ class ResNet(nn.Module):
     
         x = self.fc1(x)
         
-        x = self.softmax(x,1)
+        x = self.softmax(x)
         
         return x #.view(-1,self.n_classes)
     
