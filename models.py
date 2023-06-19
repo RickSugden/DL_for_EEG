@@ -193,6 +193,8 @@ class ResNet(nn.Module):
             self.blocks.append(ResidualBlock(*blocks[b:b+2],self.time_steps))
         
         self.fc1 =  nn.Linear(blocks[-1]*self.time_steps,self.n_classes)
+        self.softmax= nn.Softmax(dim=1)
+
         
         
     def forward(self, x: torch.Tensor):
@@ -205,7 +207,7 @@ class ResNet(nn.Module):
     
         x = self.fc1(x)
         
-        x = F.log_softmax(x,1)
+        x = self.softmax(x,1)
         
         return x #.view(-1,self.n_classes)
     
