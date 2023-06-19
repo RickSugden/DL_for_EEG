@@ -235,3 +235,82 @@ class ResidualBlock(nn.Module):
         x   = F.relu(self.bn3(self.conv3(x))+inx)
         
         return x
+
+
+class Conv1DBlock(nn.Module):
+    def __init__(self, in_channels, out_channels, kernel_size):
+        super(Conv1DBlock, self).__init__()
+        self.conv = nn.Conv1d(in_channels, out_channels, kernel_size, padding=(kernel_size // 2))
+        self.bn = nn.BatchNorm1d(out_channels)
+        
+    def forward(self, x):
+        x = self.conv(x)
+        x = self.bn(x)
+        return F.relu(x)
+
+
+class VGG13(nn.Module):
+    def __init__(self, num_channels, num_filters,  output_nums=2, dropout_rate=False):
+        super(VGG13, self).__init__()
+        self.output_nums = output_nums
+        self.dropout_rate = dropout_rate
+        self.num_channels = num_channels
+        self.num_filters = num_filters
+
+        self.block1 = nn.Sequential(
+            Conv1DBlock(num_channels, num_filters * (2 ** 0), 3),
+            Conv1DBlock(num_filters * (2 ** 0), num_filters * (2 ** 0), 3),
+            nn.MaxPool1d(kernel_size=2, stride=2)
+        )
+        
+        self.block2 = nn.Sequential(
+            Conv1DBlock(num_filters * (2 ** 0), num_filters * (2 ** 1), 3),
+            Conv1DBlock(num_filters * (2 ** 1), num_filters * (2 ** 1), 3),
+            nn.MaxPool1d(kernel_size=2, stride=2)
+        )
+        
+        self.block3 = nn.Sequential(
+            Conv1DBlock(num_filters * (2 ** 1), num_filters * (2 ** 2), 3),
+            Conv1DBlock(num_filters * (2 ** 2), num_filters * (2 ** 2), 3),
+            nn.MaxPool1d(kernel_size=2, stride=2)
+        )
+        
+        self.block4 = nn.Sequential(
+            Conv1DBlock(num_filters * (2 ** 2), num_filters * (2 ** 3), 3),
+            Conv1DBlock(num_filters * (2 ** 3), num_filters * (2 ** 3), 3),
+            nn.MaxPool1d(kernel_size=2, stride=2)
+        )
+        
+        self.block5 = nn.Sequential(
+            Conv1DBlock(num_filters * (2 ** 3), num_filters * (2 ** 3), 3),
+            Conv1DBlock(num_filters * (2 ** 3), num_filters * (2 ** 3), 3),
+            nn.MaxPool1d(kernel_size=2, stride=2)
+        )
+
+        # We will initialize fc later, once we know the input dimension
+        self.fc = None  
+
+    def forward(self, x):
+        x = self.block1(x)
+        x = self.block2(x)
+        x = self.block3(x)
+        x = self.block4(x)
+        x = self.block5(x)
+
+        if self.fc is None:
+            # Initialize fc during the first forward pass
+            n_features = x.shape[1] * x.shape[2]
+            self.fc = nn.Sequential(
+                nn.Flatten(),
+                nn.Linear(n_features, 4096),
+                nn.ReLU(),
+                nn.Linear(4096, 4096),
+                nn.ReLU(),
+                nn.Dropout(self.dropout_rate) if self.dropout_rate else nn.Identity(),
+                nn.Linear(4096, self.output_nums)
+            ).to(x.device)
+
+        x = self.fc(x)
+        
+        x = F.softmax(x, dim=1)
+        return x
