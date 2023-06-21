@@ -5,7 +5,7 @@ import torch
 import torch.optim as optim # optimzer
 import pandas as pd
 import models
-from models import PD_CNN, PD_LSTM, ResNet, EEGNet
+from models import PD_CNN, PD_LSTM, ResNet, EEGNet, VGG13
 from tqdm import tqdm
 
 def train_with_validation(model,train_dataloader, val_dataloader, epochs=30, learning_rate=0.0001, training_loss_tracker=[], val_loss_tracker=[], device="cpu"):
@@ -403,6 +403,8 @@ def loso_cross_validation(filename_list, EEG_whole_Dataset, model_type='CNN', ep
       model = ResNet(n_classes=2, n_in=60, time_steps=chunk_size).to(device)
     elif model_type == 'EEGNet':
       model = EEGNet(60, chunk_size).to(device)
+    elif model_type == 'VGG13':
+      model = VGG13(num_channels=60, num_filters=1).to(device)
     else:
       assert False, ValueError('Model not recognized')
     model.train()
