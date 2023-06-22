@@ -319,44 +319,48 @@ class VGG13(nn.Module):
 class DeepConvNet(torch.nn.Module):
     def __init__(self, n_output):
         super(DeepConvNet, self).__init__()
+        self.filters1 = 8
+        self.filters2 = 16
+        self.filters3 = 32
+        self.filters4 = 64
         self.block1 = nn.Sequential(
             # Conv2d(1, 25, kernel_size=(1,5),padding='VALID',bias=False),
             # Conv2d(25, 25, kernel_size=(2,1), padding='VALID',bias=False),
-            nn.Conv2d(1, 25, kernel_size=(1,5),bias=False),
-            nn.Conv2d(25, 25, kernel_size=(2,1),bias=False),
-            nn.BatchNorm2d(25, eps=1e-05, momentum=0.1),
+            nn.Conv2d(1, self.filters1, kernel_size=(1,5),bias=False),
+            nn.Conv2d(self.filters1, self.filters1, kernel_size=(2,1),bias=False),
+            nn.BatchNorm2d(self.filters1, eps=1e-05, momentum=0.1),
             nn.LeakyReLU(negative_slope=0.04),
-            nn.MaxPool2d(kernel_size=(1,2)),
+            nn.MaxPool2d(kernel_size=(1,4)),
             nn.Dropout(p=0.47)
         )
 
         self.block2 = nn.Sequential(
             # Conv2d(25, 50, kernel_size=(1,5),padding='VALID',bias=False),
-            nn.Conv2d(25, 50, kernel_size=(1,5),bias=False),
-            nn.BatchNorm2d(50, eps=1e-05, momentum=0.1),
+            nn.Conv2d(self.filters1, self.filters2, kernel_size=(1,5),bias=False),
+            nn.BatchNorm2d(self.filters2, eps=1e-05, momentum=0.1),
             nn.LeakyReLU(negative_slope=0.09),
-            nn.MaxPool2d(kernel_size=(1,2)),
+            nn.MaxPool2d(kernel_size=(1,4)),
             nn.Dropout(p=0.47),
         )
         self.block3 = nn.Sequential(
             # Conv2d(50, 100, kernel_size=(1,5),padding='VALID',bias=False),
-            nn.Conv2d(50, 100, kernel_size=(1,5),bias=False),
-            nn.BatchNorm2d(100, eps=1e-05, momentum=0.1),
+            nn.Conv2d(self.filters2, self.filters3, kernel_size=(1,5),bias=False),
+            nn.BatchNorm2d(self.filters3, eps=1e-05, momentum=0.1),
             nn.LeakyReLU(negative_slope=0.04),
-            nn.MaxPool2d(kernel_size=(1,2)),
+            nn.MaxPool2d(kernel_size=(1,4)),
             nn.Dropout(p=0.47),
         )
         self.block4 = nn.Sequential(
             # Conv2d(100, 200, kernel_size=(1,5),padding='VALID',bias=False),
-            nn.Conv2d(100, 200, kernel_size=(1,5),bias=False),
-            nn.BatchNorm2d(200, eps=1e-05, momentum=0.1),
+            nn.Conv2d(self.filters3, self.filters4 , kernel_size=(1,5),bias=False),
+            nn.BatchNorm2d(self.filters4 , eps=1e-05, momentum=0.1),
             nn.LeakyReLU(negative_slope=0.09),
-            nn.MaxPool2d(kernel_size=(1,2)),
+            nn.MaxPool2d(kernel_size=(1,4)),
             nn.Dropout(p=0.47),
         )
         self.mlp = nn.Sequential(
             nn.Flatten(),
-            nn.Linear(1793600,n_output,bias=True),
+            nn.Linear(30208,n_output,bias=True),
             nn.Softmax(dim=1)
         )
 
@@ -373,4 +377,3 @@ class DeepConvNet(torch.nn.Module):
         x = self.mlp(x)
         #print(x.shape)
         return x
-       
