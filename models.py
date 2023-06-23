@@ -106,7 +106,7 @@ class PD_LSTM(nn.Module):
   
 
 class EEGNet(nn.Module):
-    def __init__(self, channels, time_points):
+    def __init__(self, num_channels, time_points):
         super(EEGNet, self).__init__()
         self.T = time_points
 
@@ -128,71 +128,61 @@ class EEGNet(nn.Module):
 
         # FC Layer
         #self.fc1 = None  # We'll initialize this later
-        self.fc1 = nn.Linear(2512, 2)
+        self.fc1 = nn.Linear(2512, 512)
+        self.fc2 = nn.Linear(512, 64)
+        self.fc3 = nn.Linear(64, 2)
         self.softmax= nn.Softmax(dim=1)
 
 
     def forward(self, x):
         
-        x = x.view(x.shape[0], 1, x.shape[2],  x.shape[1])  # Reshape the input
-
-        
+        x = x.view(x.shape[0], 1, x.shape[2],  x.shape[1])  # Reshape the input       
         # Layer 1
         x = F.elu(self.conv1(x))
-
         x = self.batchnorm1(x)
-
         x = F.dropout(x, 0.25)
         x = x.permute(0, 3, 1, 2)  # Revised permute operation
     
       
-        # Layer 2
-        
+        # Layer 2       
         x = self.padding1(x)
- 
         x = F.elu(self.conv2(x))
-
-        x = self.batchnorm2(x)
-       
+        x = self.batchnorm2(x)       
         x = F.dropout(x, 0.25)
         x = self.pooling2(x)
    
         # Layer 3
-
-        x = self.padding2(x)
-  
+        x = self.padding2(x) 
         x = F.elu(self.conv3(x))
-
-        x = self.batchnorm3(x)
-       
+        x = self.batchnorm3(x)       
         x = F.dropout(x, 0.25)
-        x = self.pooling3(x)
-      
-   
-        # Flatten the output from the last layer
-       
+        x = self.pooling3(x)      
+        # Flatten the output from the last layer  
         x = torch.flatten(x, 1) # flatten all dimensions except the batch dimension
-  
-        
-
+      
         # FC Layer
-        x = self.softmax(self.fc1(x))
+        x = self.fc1(x)
+        x = self.fc2(x)
+        x = self.softmax(self.fc3(x))
 
         return x
 
 class ResNet(nn.Module):
-    def __init__(self,n_in,n_classes,time_steps):
+    def __init__(self,n_in=60,n_classes=2,time_steps=2500):
         super(ResNet,self).__init__()
         self.n_in = n_in
         self.n_classes = n_classes
         self.time_steps = time_steps
 
-        blocks  = [n_in,64,128,128]
+        blocks  = [n_in,8,16,16]
         self.blocks = nn.ModuleList()
         for b,_ in enumerate(blocks[:-1]):
             self.blocks.append(ResidualBlock(*blocks[b:b+2],self.time_steps))
         
-        self.fc1 =  nn.Linear(blocks[-1]*self.time_steps,self.n_classes)
+        self.fc1 =  None
+        self.fc2 =  nn.Linear(512,64)
+        self.fc3 =  nn.Linear(64,2)
+
         self.softmax= nn.Softmax(dim=1)
 
       
@@ -201,11 +191,20 @@ class ResNet(nn.Module):
 
         for block in self.blocks:
             x = block(x)
+     
 
             
         x = x.view(x.size(0), -1)
-    
+
+
+        if self.fc1 == None: 
+          self.fc1 = nn.Linear(x.shape[-1],512).cuda()
         x = self.fc1(x)
+
+        x = self.fc2(x)
+     
+        x = self.fc3(x)
+     
         
         x = self.softmax(x)
         
@@ -218,7 +217,7 @@ class ResidualBlock(nn.Module):
         self.out_maps = out_maps
         self.time_steps = time_steps
         
-        self.conv1 = nn.Conv1d(self.in_maps, self.out_maps,7,padding=3)
+        self.conv1 = nn.Conv1d(self.in_maps, self.out_maps,7,padding=3, stride=2)
         self.bn1   = nn.BatchNorm1d(self.out_maps)
 
         self.conv2 = nn.Conv1d(self.out_maps,self.out_maps,5,padding=2)
@@ -317,12 +316,12 @@ class VGG13(nn.Module):
     
 
 class DeepConvNet(torch.nn.Module):
-    def __init__(self, n_output):
+    def __init__(self, n_output=2):
         super(DeepConvNet, self).__init__()
-        self.filters1 = 8
-        self.filters2 = 16
-        self.filters3 = 32
-        self.filters4 = 64
+        self.filters1 = 1
+        self.filters2 = 2
+        self.filters3 = 4
+        self.filters4 = 8
         self.block1 = nn.Sequential(
             # Conv2d(1, 25, kernel_size=(1,5),padding='VALID',bias=False),
             # Conv2d(25, 25, kernel_size=(2,1), padding='VALID',bias=False),
@@ -360,7 +359,9 @@ class DeepConvNet(torch.nn.Module):
         )
         self.mlp = nn.Sequential(
             nn.Flatten(),
-            nn.Linear(30208,n_output,bias=True),
+            nn.Linear(3776,512, bias=True),
+            nn.Linear(512,64, bias=True),
+            nn.Linear(64,2, bias=True),
             nn.Softmax(dim=1)
         )
 
