@@ -4,6 +4,11 @@ venv/*
 
 training_results/*
 testing_results/*
+files_from_desktops/*
+baseline_training_results_ai_office/*
+baseline_training_results_phedias/*
+
+.DS_Store
 
 __pycache__/*
 .python-version
