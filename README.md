@@ -1,16 +1,34 @@
 # Deep Learning for EEG pipeline
-contains:
 
-### 1. File for Pytorch Dataset handling
-A) dataset class for research-grade EEG data
-B) dataset class for Muse wearable EEG data
-C) method to perform Leave-one-subject-out cross validation
-### 2. File for Pytorch nn.Module classes containing various DL Architectures 
-A) CNN - Convolutional Neural Network
-B) LSTM - Long Short-term Memory
-C) Transformer
-### 3. File for training loop
-A) Training method
-B) Validation method
-### 4. Module for producing various result visualizations
-### 5. Module for saving results in a database
+This is a repo of the code used to develop the paper: Generalizable electroencephalographic classification of Parkinson's disease using deep learning
+doi: https://doi.org/10.1016/j.imu.2023.101352
+
+### Contents
+### 1. main.ipynb
+Use this as the main control panel for all the subroutines throughout the repo.
+### 2. various .py files
+These contain the subroutines to perform:
+- Data handling
+- Hyperparameter tuning
+- models used for benchmarking
+- training/testing loops
+### 3. Final editions
+These are the colab notebooks that I used to generate the data for the paper. This is the easiest way to quickly reproduce an experiment if you're not trying to develop too much. 
+
+
+### How to use
+If you are interested in working with this pipeline, here is what I recommend:
+1. Download everything
+2. In main.ipynb, get each of the cells under the miscellaneous header (at the bottom) to run using any of the provided models.
+you're now ready to start.
+3. develop a model, place in models.py
+4. Define the parameters you want to optimize (batch size, training epochs, learning rate) and run hyperparameter training header
+5. Use hyperparameter selection to determine which output file from the hyperparameter training was the most successful
+6. Continue under that header to train replicates of your chosen hyperparameter combination. This will automatically generate results files under ./testing_results
+7. The last few cells from this header allow you to extract and summarize your results, comparing them to any other results you have access to (such as the ones from the paper).
+
+### Implementation details:
+- final editions .zip contains colab notebooks, compatible with default colab environment
+- local notebooks are optimized for GPU usage and python 3.9.6
+- requirements.txt provided
+- If you are trying to develop new models, and test rigorously, I recommend doing it locally with the GPU repo.
