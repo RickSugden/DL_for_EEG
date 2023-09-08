@@ -18,14 +18,15 @@ These are the colab notebooks that I used to generate the data for the paper. Th
 
 ### How to use
 If you are interested in working with this pipeline, here is what I recommend:
-1. Download everything
-2. In main.ipynb, get each of the cells under the miscellaneous header (at the bottom) to run using any of the provided models.
+1. Download everything. Including the resting state data from Anjum and Cavanaugh. http://predict.cs.unm.edu/downloads.php
+2. Preprocess this data according to the details in the paper. Store in repository folder e.g. ./Data/UI/PD_1661.csv or ./Data/UNM/CTL_1081.csv
+3. In main.ipynb, get each of the cells under the miscellaneous header (at the bottom) to run using any of the provided models.
 you're now ready to start.
-3. develop a model, place in models.py
-4. Define the parameters you want to optimize (batch size, training epochs, learning rate) and run hyperparameter training header
-5. Use hyperparameter selection to determine which output file from the hyperparameter training was the most successful
-6. Continue under that header to train replicates of your chosen hyperparameter combination. This will automatically generate results files under ./testing_results
-7. The last few cells from this header allow you to extract and summarize your results, comparing them to any other results you have access to (such as the ones from the paper).
+4. develop a model, place in models.py
+5. Define the parameters you want to optimize (batch size, training epochs, learning rate) and run hyperparameter training header
+6. Use hyperparameter selection to determine which output file from the hyperparameter training was the most successful
+7. Continue under that header to train replicates of your chosen hyperparameter combination. This will automatically generate results files under ./testing_results
+8. The last few cells from this header allow you to extract and summarize your results, comparing them to any other results you have access to (such as the ones from the paper).
 
 ### Implementation details:
 - final editions .zip contains colab notebooks, compatible with default colab environment
