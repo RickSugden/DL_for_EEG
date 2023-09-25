@@ -1,6 +1,7 @@
 Data/*
 
 venv/*
+DL_EEG_venv/*
 
 training_results/*
 testing_results/*
