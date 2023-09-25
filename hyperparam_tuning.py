@@ -46,8 +46,10 @@ def make_csv_from_log(log, final_metrics, filename='CV', save_path='./training_r
     return csv
 
 
-def perform_random_hyperparameter_search(EEG_dataset, leave_one_out_list,  sample_size=60, search_title='CNN_hyperparameter_search/', save_path='./training_results/', batch_min_max = (1,32), epoch_min_max=(5,50),learning_rate_min_max=(0.00001,0.1), model_type='CNN', supress_output=True, device='cpu'):
+def perform_random_hyperparameter_search(EEG_dataset, leave_one_out_list,  sample_size=60, search_title='CNN_hyperparameter_search/', save_path='./training_results/', batch_min_max = (1,32), epoch_min_max=(5,50),learning_rate_min_max=(0.00001,0.1), model_type='CNN', supress_output=True, device='cpu',rand_seed=42):
     
+    random.seed(rand_seed)
+
     if os.path.exists(save_path)==False:
         #make folder to store results
         os.makedirs(save_path)
@@ -73,23 +75,36 @@ def perform_random_hyperparameter_search(EEG_dataset, leave_one_out_list,  sampl
         learning_rate_min, learning_rate_max = learning_rate_min_max
 
         #select random hyperparameters
-        batch_size = random.randint(batch_size_min, batch_size_max)
+        batch_size = random.randint(batch_size_min, batch_size_max, )
         epochs = random.randint(epochs_min, epochs_max)
         # draw learning rate from a uniform distribution on a log scale
         learning_rate = loguniform.rvs(learning_rate_min, learning_rate_max, size=1)[0]
         
-        #set experiment title
-        configuration = model_type+'_batch_size_'+str(batch_size)+'_epochs_'+str(epochs)+'_learning_rate_'+str(round(learning_rate,5))
+        if 'Transformer' in search_title:
+            #we need to set hyperparameters for the transformer model including the number of heads and the number of layers
+            #set the number of heads to be a random integer between 1 and 8
+            num_heads = random.randint(1,8)
+            #set the number of layers to be a random integer between 1 and 8
+            num_layers = random.randint(1,8)
 
-        print('hyperparameter configuration: ', configuration)
+            #set experiment title
+            configuration_string = model_type+'_batch_size_'+str(batch_size)+'_epochs_'+str(epochs)+'_learning_rate_'+str(round(learning_rate,5))+'_num_heads_'+str(num_heads)+'_num_layers_'+str(num_layers)
+            configuration_dict = {'batch_size': batch_size, 'epochs': epochs, 'learning_rate': learning_rate,  'num_heads':num_heads, 'num_layers':num_layers}
+
+        else:
+            #set experiment title
+            configuration_string = model_type+'_batch_size_'+str(batch_size)+'_epochs_'+str(epochs)+'_learning_rate_'+str(round(learning_rate,5))
+            configuration_dict = {'batch_size': batch_size, 'epochs': epochs, 'learning_rate': learning_rate,  'num_heads':None, 'num_layers':None}
+
+        print('hyperparameter configuration: ', configuration_dict)
         
         #perform cross validation
         cv_log, total_metrics = loso_cross_validation(filename_list=leave_one_out_list, EEG_whole_Dataset=EEG_dataset, model_type=model_type, 
                                                     epochs=epochs, batch_size=batch_size, learning_rate=learning_rate,
-                                                    device=device, supress_output=True)
+                                                    device=device, supress_output=True, configuration=configuration_dict)
 
         #save results
-        make_csv_from_log(cv_log, total_metrics, filename=configuration, save_path=save_path)
+        make_csv_from_log(cv_log, total_metrics, filename=configuration_string, save_path=save_path)
         
 
 

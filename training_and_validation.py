@@ -25,7 +25,8 @@ def train_with_validation(model,train_dataloader, val_dataloader, epochs=30, lea
       training_loss_tracker(list): updated list containing float values of training loss from previous training. 
       val_loss_tracker(list): updated list containing float values of validation loss from previous training. 
     '''
-    assert epochs > len(training_loss_tracker), 'Loss tracker is already equal to or greater than epochs'
+    
+    assert epochs > len(training_loss_tracker), 'Loss tracker is already greater than epochs'
 
     #define loss function and optimizer
     criterion = nn.CrossEntropyLoss(weight=torch.tensor([0.5,0.5]).to(device=device)) #you can adjust weights. first number is applied to PD and the second number to Control
@@ -71,12 +72,12 @@ def train_with_validation(model,train_dataloader, val_dataloader, epochs=30, lea
         # perform validation every N epochs (adjust val_every)
         val_every = 1
         if epoch % val_every == 0:    
-          print('[epoch: %d, batch: %5d] average training loss: %.3f' % (epoch + 1, i + 1, running_loss / counter ))
+          print('[epoch: %d] average training loss: %.3f' % (epoch + 1, running_loss / counter ))
           training_loss_tracker.append(running_loss/counter)
           running_loss = 0.0
           counter = 0
           current_val_loss = 0
-          current_val_loss = validate(model,val_dataloader,batch_size=batch_size, device=device)
+          current_val_loss = validate(model,val_dataloader, device=device)
           val_loss_tracker.append(current_val_loss)
 
     # whatever you are timing goes here
@@ -352,7 +353,7 @@ def calculate_metrics(TP, FP, TN, FN):
 
     return accuracy, f1_score, sensitivity, specficity
 
-def loso_cross_validation(filename_list, EEG_whole_Dataset, model_type='CNN', epochs=1, batch_size=1, num_workers=0, learning_rate=0.0001, chunk_size=2500, device='cpu', supress_output=False):
+def loso_cross_validation(filename_list, EEG_whole_Dataset, configuration, model_type='CNN', epochs=1, batch_size=1, num_workers=0, learning_rate=0.0001, chunk_size=2500, device='cpu', supress_output=False):
   ##################### CROSS VALIDATION ##############
   '''
   Here, a for loop will iterate through every object in the whole dataset. Using the filename, it will determine the
@@ -360,11 +361,12 @@ def loso_cross_validation(filename_list, EEG_whole_Dataset, model_type='CNN', ep
   subject numbers. It will repeat this for each subject number.
   Epochs and Learning rate are adjustable below
   '''
+  
   correct_votes, incorrect_votes, unsure_votes = 0,0,0
   true_positives, false_positives, true_negatives, false_negatives = 0,0,0,0
   
   log = []
-  print('tracker for the subjects')
+  
   #leave_out will be the subject we validate on
   #with tqdm(total=len(filename_list), desc='Subjects completed:', position=1) as inner_pbar:
 
@@ -380,14 +382,15 @@ def loso_cross_validation(filename_list, EEG_whole_Dataset, model_type='CNN', ep
       #convert datasets to dataloaders and delete the datasets to free up memory
       train_dataloader = DataLoader(train_dataset, batch_size=batch_size, shuffle=True, num_workers=0)
       val_dataloader = DataLoader(val_dataset, batch_size=batch_size, shuffle=True, num_workers=0)
-    
+        
     elif isinstance(EEG_whole_Dataset, torch.utils.data.Dataset):
       print('splitting torch dataset')
       train_dataset, val_dataset = loso_split(EEG_whole_Dataset, leave_out)
       #convert datasets to dataloaders and delete the datasets to free up memory
       train_dataloader = DataLoader(train_dataset, batch_size=batch_size, shuffle=True, num_workers=num_workers, pin_memory=True)
       val_dataloader = DataLoader(val_dataset, batch_size=batch_size, shuffle=True, num_workers=num_workers, pin_memory=True)
-    
+      print('train_dataloader', len(train_dataloader))
+      print('val_dataloader', len(val_dataloader))  
     else:
       TypeError, 'unable to identify dataset format'
 
@@ -407,6 +410,15 @@ def loso_cross_validation(filename_list, EEG_whole_Dataset, model_type='CNN', ep
       model = VGG13(num_channels=60, num_filters=1).to(device)
     elif model_type == 'DeepConvNet':
       model = DeepConvNet(n_output=2).to(device)
+    elif model_type == 'Transformer':
+      #extract the configuration parameters from configuration = model_type+'_batch_size_'+str(batch_size)+'_epochs_'+str(epochs)+'_learning_rate_'+str(round(learning_rate,5))+'_num_heads_'+str(num_heads)+'_num_layers_'+str(num_layers)
+      n_head = int(configuration['num_heads']) 
+      n_layers = int(configuration['num_layers']) 
+      seq_length = 0
+      while seq_length < (chunk_size-n_head):
+        seq_length += n_head
+
+      model = models.Transformer(device, seq_len=chunk_size, d_model=60,n_head=n_head, n_layers=n_layers, details=False).to(device)
     else:
       assert False, ValueError('Model not recognized')
     model.train()
