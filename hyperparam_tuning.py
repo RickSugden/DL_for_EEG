@@ -44,9 +44,9 @@ def make_csv_from_log(log, final_metrics, filename='CV', save_path='./training_r
         csv.write('\n')
     
     return csv
+ 
 
-
-def perform_random_hyperparameter_search(EEG_dataset, leave_one_out_list,  sample_size=60, search_title='CNN_hyperparameter_search/', save_path='./training_results/', batch_min_max = (1,32), epoch_min_max=(5,50),learning_rate_min_max=(0.00001,0.1), model_type='CNN', supress_output=True, device='cpu',rand_seed=42):
+def perform_random_hyperparameter_search(EEG_dataset, leave_one_out_list,  sample_size=60, search_title='Transformer_hyperparameter_search/', save_path='./training_results/', batch_min_max = (1,32), epoch_min_max=(5,50),learning_rate_min_max=(0.000001,0.001), model_type='Transformer', attention_blocks=6, heads=4, model_dim=60, seq_length=512, supress_output=True, device='cpu',rand_seed=42):
     
     random.seed(rand_seed)
 

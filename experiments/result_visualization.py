@@ -20,7 +20,7 @@ from sklearn.metrics import auc, confusion_matrix
 from torch.utils.data import Dataset, DataLoader, random_split, Subset, RandomSampler
 from data_handling import EEGDataset
 from training_and_validation import validate
-from models import PD_CNN
+from CNN_models import PD_CNN
 #Calculate AUC
 #testing the performance
 #set the device to cuda:0 

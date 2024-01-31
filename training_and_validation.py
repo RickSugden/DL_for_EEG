@@ -4,10 +4,10 @@ import torch.nn as nn # basic building block for neural neteorks
 import torch
 import torch.optim as optim # optimzer
 import pandas as pd
-import models
-from models import PD_CNN, PD_LSTM, ResNet, EEGNet, DeepConvNet, VGG13
+import CNN_models
+from CNN_models import PD_CNN, PD_LSTM, ResNet, EEGNet, DeepConvNet, VGG13
 from tqdm import tqdm
-
+ 
 def train_with_validation(model,train_dataloader, val_dataloader, epochs=30, learning_rate=0.0001, training_loss_tracker=[], val_loss_tracker=[], device="cpu"):
     '''
     INPUTS:
@@ -418,7 +418,7 @@ def loso_cross_validation(filename_list, EEG_whole_Dataset, configuration, model
       while seq_length < (chunk_size-n_head):
         seq_length += n_head
 
-      model = models.Transformer(device, seq_len=chunk_size, d_model=60,n_head=n_head, n_layers=n_layers, details=False).to(device)
+      model = CNN_models.Transformer(device, seq_len=chunk_size, d_model=60,n_head=n_head, n_layers=n_layers, details=False).to(device)
     else:
       assert False, ValueError('Model not recognized')
     model.train()
