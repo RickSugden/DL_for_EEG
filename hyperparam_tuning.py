@@ -1,16 +1,15 @@
 import os
 import random
 import training_and_validation
-from training_and_validation import loso_cross_validation
+from training_and_validation import loso_cross_validation, train_and_test
 from tqdm import tqdm
 from scipy.stats import loguniform
-
 
 
 def make_csv_from_log(log, final_metrics, filename='CV', save_path='./training_results'):
     ''' 
     log is a list of tuples of the form (subject, TP, FP, TN, FN)
-    total_metrics is a list = [correct_votes, incorrect_votes, unsure_votes, true_positives, false_positives, true_negatives, false_negatives, acc, f1, sensitivity, specificity]
+    total_metrics is a list = [true_positives, false_positives, true_negatives, false_negatives, acc, f1, sensitivity, specificity]
     I want a csv with the total metrics at the top row and then the log below it for each subject. 
     '''
     #if path doesn't end with a slash, add one
@@ -21,7 +20,7 @@ def make_csv_from_log(log, final_metrics, filename='CV', save_path='./training_r
     csv = open(save_path+filename+'.csv', 'w')
 
     #write final metrics to the first line of the csv
-    csv.write('correct_votes, incorrect_votes, unsure_votes, true_positives, false_positives, true_negatives, false_negatives, acc, f1, sensitivity, specificity\n')
+    csv.write('true_positives, false_positives, true_negatives, false_negatives, acc, f1, sensitivity, specificity, precision\n')
     for metric in final_metrics:
         #if not the last item, add a comma
         if metric != final_metrics[-1]:
@@ -32,13 +31,12 @@ def make_csv_from_log(log, final_metrics, filename='CV', save_path='./training_r
     csv.write('\n')
 
     #write the log to the csv
-    for tuple in log:
-        for item in tuple:
-            #if not the last item, add a comma
-            if item != tuple[-1]:
-                csv.write(str(item)+',')
-            else:
-                csv.write(str(item))
+    for item in log:
+        
+        if item != log[-1]:
+            csv.write(str(item)+',')
+        else:
+            csv.write(str(item))
             
             
         csv.write('\n')
@@ -47,7 +45,7 @@ def make_csv_from_log(log, final_metrics, filename='CV', save_path='./training_r
  
 
 def perform_random_hyperparameter_search(EEG_dataset, leave_one_out_list,  sample_size=60, search_title='Transformer_hyperparameter_search/', save_path='./training_results/', batch_min_max = (1,32), epoch_min_max=(5,50),learning_rate_min_max=(0.000001,0.001), model_type='Transformer', attention_blocks=6, heads=4, model_dim=60, seq_length=512, supress_output=True, device='cpu',rand_seed=42):
-    
+
     random.seed(rand_seed)
 
     if os.path.exists(save_path)==False:
@@ -62,10 +60,10 @@ def perform_random_hyperparameter_search(EEG_dataset, leave_one_out_list,  sampl
         print('The number of files in the directory is greater than the sample size. No hyperparameter search will be performed.')
         return
 
-    
+
     #loop from num_files to sample_size
     for i in range(num_files, sample_size):
-        
+
 
         print('-----------------running replicate #', i, '-------------------------')
         #print('the EEG dataset is stored on the cuda:0 device') if EEG_dataset[0][0].get_device()==0 else print('the EEG dataset is stored on the cpu device')
@@ -83,28 +81,38 @@ def perform_random_hyperparameter_search(EEG_dataset, leave_one_out_list,  sampl
         if 'Transformer' in search_title:
             #we need to set hyperparameters for the transformer model including the number of heads and the number of layers
             #set the number of heads to be a random integer between 1 and 8
-            num_heads = random.randint(1,8)
+            attention_min, attention_max = attention_blocks
+            head_min, head_max = heads
+            num_heads = random.randint(head_min, head_max)
             #set the number of layers to be a random integer between 1 and 8
-            num_layers = random.randint(1,8)
+            num_blocks = random.randint(attention_min, attention_max)
 
             #set experiment title
-            configuration_string = model_type+'_batch_size_'+str(batch_size)+'_epochs_'+str(epochs)+'_learning_rate_'+str(round(learning_rate,5))+'_num_heads_'+str(num_heads)+'_num_layers_'+str(num_layers)
-            configuration_dict = {'batch_size': batch_size, 'epochs': epochs, 'learning_rate': learning_rate,  'num_heads':num_heads, 'num_layers':num_layers}
+            configuration_string = model_type+'_batch_size_'+str(batch_size)+'_epochs_'+str(epochs)+'_learning_rate_'+str(round(learning_rate,5))+'_num_heads_'+str(num_heads)+'_num_blocks_'+str(num_blocks)+'_seq_length_'+str(seq_length)
+            configuration_dict = {'batch_size': batch_size, 'epochs': epochs, 'learning_rate': learning_rate,  'num_heads':num_heads, 'num_blocks':num_blocks, 'seq_length':seq_length}
 
         else:
             #set experiment title
             configuration_string = model_type+'_batch_size_'+str(batch_size)+'_epochs_'+str(epochs)+'_learning_rate_'+str(round(learning_rate,5))
-            configuration_dict = {'batch_size': batch_size, 'epochs': epochs, 'learning_rate': learning_rate,  'num_heads':None, 'num_layers':None}
+            configuration_dict = {'batch_size': batch_size, 'epochs': epochs, 'learning_rate': learning_rate}
 
         print('hyperparameter configuration: ', configuration_dict)
         
-        #perform cross validation
-        cv_log, total_metrics = loso_cross_validation(filename_list=leave_one_out_list, EEG_whole_Dataset=EEG_dataset, model_type=model_type, 
-                                                    epochs=epochs, batch_size=batch_size, learning_rate=learning_rate,
-                                                    device=device, supress_output=True, configuration=configuration_dict)
+        if 'Transformer' not in search_title:           
+            # #perform cross validation
+            log, total_metrics = loso_cross_validation(filename_list=leave_one_out_list, EEG_whole_Dataset=EEG_dataset, model_type=model_type, 
+                                                        epochs=epochs, batch_size=batch_size, learning_rate=learning_rate,
+                                                        device=device, supress_output=True, configuration=configuration_dict)
+        else:    
+            ''' Instead of performing cross validation, we want to split the dataset into train/test split to train the Transformer
+            model, due to the computationally expensive of nature of LOOCV'''
+            # create the model, do the split train/test, call the train function
+            
+            log = train_and_test(epochs, learning_rate, configuration=configuration_dict, EEG_Dataset=EEG_dataset, device=device)
+            total_metrics = [] # placeholder, need to modify design (simo)
 
         #save results
-        make_csv_from_log(cv_log, total_metrics, filename=configuration_string, save_path=save_path)
+        make_csv_from_log(log, total_metrics, filename=configuration_string, save_path=save_path)
         
 
 

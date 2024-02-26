@@ -7,6 +7,9 @@ import pandas as pd
 import CNN_models
 from CNN_models import PD_CNN, PD_LSTM, ResNet, EEGNet, DeepConvNet, VGG13
 from tqdm import tqdm
+# new imports
+import transformer_models
+from transformer_models import transformNET, AttentionBlock, MultiHeadAttention
  
 def train_with_validation(model,train_dataloader, val_dataloader, epochs=30, learning_rate=0.0001, training_loss_tracker=[], val_loss_tracker=[], device="cpu"):
     '''
@@ -94,13 +97,12 @@ def train_with_validation(model,train_dataloader, val_dataloader, epochs=30, lea
 
 
 #testing the performance
-def validate(model, valloader,threshold=0.5,supress_output=False, device='cpu'):
+def validate(model, valloader,threshold=0.5,supress_output=False, device='cpu', LOSO_mode=False):
   '''
     INPUTS:
       model(nn.Module): here we will pass PDNet to the training loop. 
       valloader(Dataloader): here we will pass the torch.utils.dataloader.Dataloader containing all the validation batches. 
       threshold(float): give a threshold above which a classification will be binarized to PD and below to CTL
-      batch_size(int): batch size of the valloader
       supress_output(bool): False to get output print statements
     
     OUTPUTS:
@@ -114,14 +116,14 @@ def validate(model, valloader,threshold=0.5,supress_output=False, device='cpu'):
   true_negatives = 0
   false_positives = 0
   false_negatives = 0
-
+  vote = 0
   counter = 0
 
   #This loads a batch at time
   for i, data in enumerate(valloader, 0):
     #read in data
     inputs, labels, filename = data
-    inputs, labels = torch.permute(inputs,(0,1,2)).to(device), labels.to(torch.float32).to(device) #send them to the GPU
+    inputs, labels = torch.permute(inputs,(0,2,1)).to(device), labels.to(torch.int64).to(device) #send them to the GPU. Simo changes feb15-2024: permutation + type of labels from float32 to int64 
     
     #forward
     output = model(inputs)
@@ -137,38 +139,42 @@ def validate(model, valloader,threshold=0.5,supress_output=False, device='cpu'):
     #binarize output according to the threshold you set
     output[output>threshold] = 1
     output[output<=threshold] = 0
-
+   
     #determine whether each classification was true/false and postive/negative
     for j in range(0,len(output)):
-      if (output[j-1,0] == 1) and (labels[j-1,0] == 1):
+      
+      if (output[j,0].item() == 1) and (labels[j].item() == 1):
           true_positives += 1
           sequence.append(1)
-      elif(output[j-1,0]==1) and (labels[j-1,0] == 0):
+      elif(output[j,0].item()==1) and (labels[j].item() == 0):
           false_positives += 1
           sequence.append(0)
-      elif(output[j-1,0]==0) and (labels[j-1,0]== 1):
+      elif(output[j,0].item()==0) and (labels[j].item()== 1):
           false_negatives += 1
           sequence.append(0)
-      elif(output[j-1,0]==0) and (labels[j-1,0]== 0):
+      elif(output[j,0].item()==0) and (labels[j].item()== 0):
           true_negatives += 1
           sequence.append(1)
-
+      else:
+        AssertionError, 'not able to assign classification as true or false'
+ 
   #aggregate epochs via majority vote
-  if (true_positives + true_negatives) > (false_negatives + false_positives):
-    vote = 'Correct'
-    
-  elif (true_positives + true_negatives) < (false_negatives + false_positives):
-    vote = 'Incorrect'
-    
-  else:
-    vote = 'Unsure'
+  if LOSO_mode==True:
+    if (true_positives + true_negatives) > (false_negatives + false_positives):
+      vote = 'Correct'
+      
+    elif (true_positives + true_negatives) < (false_negatives + false_positives):
+      vote = 'Incorrect'
+      
+    else:
+      vote = 'Unsure'
 
   if supress_output == False:
     print('true positives: ', true_positives)
     print('false positives: ',false_positives)
     print('true negatives: ',true_negatives)
     print('false negatives', false_negatives)  
-    print('The vote was: ', vote)
+    if LOSO_mode==True: print('The vote was: ', vote)
 
   return true_positives, false_positives, true_negatives, false_negatives, vote, sequence
 
@@ -243,6 +249,7 @@ def cross_train(model, train_dataloader, val_dataloader, epochs=23, learning_rat
       
       running_loss += loss.item()
 
+      # might wanna remove this (simo)
       # whatever you are timing goes here
       if device.startswith('cuda'):
         end.record()
@@ -339,19 +346,20 @@ def calculate_metrics(TP, FP, TN, FN):
        #calculate f1 score
       f1_score = 2 * ((precision * recall) / (precision + recall))
 
-    if (TP + FN) == 0:
-      sensitivity = 0
-    else:
-      #calculate sensitivity
-      sensitivity = TP / (TP + FN)
+    # if (TP + FN) == 0:
+    #   sensitivity = 0
+    # else:
+    #   #calculate sensitivity
+    #   sensitivity = TP / (TP + FN)
+    sensitivity = recall
 
     if (TN + FP) == 0:
-      specficity = 0
+      specificity = 0
     else:
       #calculate specificity
-      specficity = TN / (TN + FP)
+      specificity = TN / (TN + FP)
 
-    return accuracy, f1_score, sensitivity, specficity
+    return accuracy, f1_score, sensitivity, specificity, precision
 
 def loso_cross_validation(filename_list, EEG_whole_Dataset, configuration, model_type='CNN', epochs=1, batch_size=1, num_workers=0, learning_rate=0.0001, chunk_size=2500, device='cpu', supress_output=False):
   ##################### CROSS VALIDATION ##############
@@ -525,7 +533,7 @@ def loso_split_tensor(whole_dataset_tensor, leave_out):
 
 
 
-def train(model,train_dataloader, epochs=30, learning_rate=0.0001, training_loss_tracker=[], device="cpu"):
+def train(model, EEG_Dataset,train_dataloader, epochs=30, learning_rate=0.0001, training_loss_tracker=[], device="cpu"):
     ''' Method to perform a training session with no validation feedback. meant to be a followup to a CV/hyperparameter search
     INPUTS:
       model(nn.Module): here we will pass PDNet to the training loop.
@@ -540,6 +548,8 @@ def train(model,train_dataloader, epochs=30, learning_rate=0.0001, training_loss
       training_loss_tracker(list): updated list containing float values of training loss from previous training. 
 
     '''
+
+
     assert epochs > len(training_loss_tracker), 'Loss tracker is already equal to or greater than epochs'
 
     #define loss function and optimizer
@@ -693,3 +703,135 @@ def initialize_model(model_type='CNN', device='cpu'):
   
 
   return model
+
+
+# '''
+# Code to train the Attention-based transformer model
+# '''
+# def createModel(EEG):
+def train_and_test(epochs, learning_rate, configuration, EEG_Dataset, device="cpu"):
+  # Creating data test/val split
+  train_dataset, val_dataset = random_split(EEG_Dataset, [0.9, 0.1],generator=torch.Generator().manual_seed(402))
+
+
+  #create a respective dataloader out of the test/val split
+  batch_size = configuration['batch_size']
+  trainloader = DataLoader(train_dataset, batch_size=batch_size, shuffle=True, num_workers=2, drop_last=True)
+  valloader = DataLoader(val_dataset, batch_size=batch_size,shuffle=True, num_workers=2, drop_last=True)
+  #print(next(trainloader))
+  # Initializing the model
+  # torch.cuda.empty_cache()
+  model = transformNET(num_blocks= configuration['num_blocks'], heads = configuration['num_heads']).to(device)
+  print(' model has been successfully created')
+
+  log = trainTransformer(model, trainloader, valloader, epochs=configuration['epochs'], learning_rate=configuration['learning_rate'], device=device)
+  return log #rick: results was not being defined, so I removed it.
+
+
+
+
+
+def trainTransformer(model,train_dataloader, val_dataloader, epochs=30, learning_rate=0.0001, device="cpu"):
+    '''
+    INPUTS: 
+      model(nn.Module): here we will pass PDNet to the training loop.
+      train_dataloader(Dataloader): here we will pass the torch.utils.dataloader.Dataloader containing all the training batches.
+      val_dataloader(Dataloader): here we will pass the torch.utils.dataloader.Dataloader containing all the validation batches.
+      epochs(int): the total number of epochs to train for
+      learning_rate(float): training hyperparameter defines the rate at which the optimizer will learn
+      training_loss_tracker(list): list containing float values of training loss from previous training. The length of this list
+      will be taken as the current epoch number.
+      val_loss_tracker(list):list containing float values of validation loss from previous training.
+
+    OUTPUTS:
+      model(nn.Module): updated network after being trained.
+      training_loss_tracker(list): updated list containing float values of training loss from previous training.
+      val_loss_tracker(list): updated list containing float values of validation loss from previous training.
+    '''
+
+    # assert epochs > len(training_loss_tracker), 'Loss tracker is already equal to or greater than epochs'
+    model.train()
+    #define loss function and optimizer
+    criterion = nn.CrossEntropyLoss(weight=torch.tensor([0.5,0.5]).cuda(), label_smoothing = 0.1)# #you can adjust weights. first number is applied to PD and the second number to Control
+    optimizer = optim.Adam(model.parameters(), betas = (0.9, 0.98), eps = 1.0e-9, lr=learning_rate)
+    scheduler = torch.optim.lr_scheduler.StepLR(optimizer, step_size=15, gamma=0.65)
+    start_decay_epoch = 15
+    #scheduler = Scheduler(optimizer, dim_embed=60, warmup_steps=5)
+
+    #start a timer
+    start = torch.cuda.Event(enable_timing=True)
+    end = torch.cuda.Event(enable_timing=True)
+    start.record()
+
+    # current_epoch = len(training_loss_tracker)
+    counter = 0
+
+    #here, we take Epoch in a deep learning sense (i.e. iteration of training over the whole dataset)
+    # for epoch in range(current_epoch, epochs):
+    for epoch in range(epochs):
+      # Assuming 'optimizer' is your optimizer object
+      current_learning_rate = optimizer.param_groups[0]['lr']
+      print("Current/Last Learning Rate:", current_learning_rate)
+
+      running_loss = 0.0
+      counter = 0
+      for i, data in enumerate(train_dataloader, 0):
+      # for data in (iter(train_dataloader)):
+        # get the inputs; data is a list of [inputs, labels]
+        # print(data)
+        inputs, labels, filename = data
+        # print(f"inputs shape = {inputs.shape}")
+        # print(f"labels shape = {labels.shape}")
+        # labels = labels.type(torch.LongTensor)
+        inputs, labels = torch.permute(inputs, (0,2,1)).to(device), labels.to(torch.int64).to(device) #send them to the GPU
+        # print(f"inputs: {inputs[0][0][0]:.16f}")
+        batch_size = inputs.shape[0]
+        # zero the parameter gradients
+        optimizer.zero_grad()
+
+        # forward
+        outputs = model(inputs)
+        # print(f"output type = {outputs.type()}")
+        # outputs = outputs.long()
+
+        #Apply L2 Regularization. Replace pow(2.0) with abs() for L1 regularization
+        # l2_lambda = 0.001
+        # l2_norm = sum(p.pow(2.0).sum() for p in model.parameters())
+
+        #loss + backward + optimize
+        loss = criterion(outputs,labels) # + l2_lambda*l2_norm
+        loss.backward()
+        optimizer.step()
+
+        running_loss += loss.item()
+        counter += 1
+      #print(loss.item())
+
+      if epoch >= start_decay_epoch:
+        scheduler.step()
+
+  ##########################################################################
+  ################################ Validation ##############################  
+  ##########################################################################
+            
+    log = []
+
+    
+    TP, FP, TN, FN, vote, sequence = validate(model, val_dataloader, device = device)
+    # precision, sensitivity, accuracy, f1 = TP + (TP + FP), TP / (TP + FN), (TP + TN) / (TP + FN + TN + FP), (2*sensitivity*precision) / (precision + sensitivity) 
+    accuracy, f1, sensitivity, specificity, precision = calculate_metrics(TP, FP, TN, FN)
+
+    # whatever you are timing goes here
+    end.record()
+    log = [TP, FP, TN, FN, accuracy, f1, sensitivity, specificity, precision]
+
+
+    # Waits for everything to finish running
+    torch.cuda.synchronize()
+
+    print('Finished Training + Validation Session')
+    print('Time elapsed in miliseconds: ', start.elapsed_time(end))  # milliseconds
+    print('The training loss at the end of this session is: ',loss.item())
+
+    # return training_loss_tracker, val_loss_tracker
+    return log

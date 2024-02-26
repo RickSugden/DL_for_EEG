@@ -180,6 +180,7 @@ def make_data_into_tensor(data_path, chunk_size=2500, device='cpu'):
     normalized_df_list = []
     
     #iterate through each epoch
+ 
     for df_index in range(0,len(df_list)):
       
       temp_df = df_list[df_index]
@@ -229,9 +230,9 @@ def make_data_into_tensor(data_path, chunk_size=2500, device='cpu'):
     dataset_tensor = torch.permute(dataset_tensor, (0, 2, 1)).float()
     label_tensor = label_tensor.float()
     subject_tensor = subject_tensor.float()
-
+    #print(dataset_tensor)
     #create a tensor dataset
     if device.startswith('cuda'): print('moving tensor dataset to gpu')
-    tensor_dataset = TensorDataset(dataset_tensor.to(device), label_tensor.to(device), subject_tensor.to(device))
-
-    return tensor_dataset
+    #this was the line causing everything to go to zero #tensor_dataset = TensorDataset(dataset_tensor.to(device), label_tensor.to(device), subject_tensor.to(device))
+    tensor_dataset = TensorDataset(dataset_tensor, label_tensor, subject_tensor)
+    return tensor_dataset, dataset_tensor, label_tensor, subject_tensor

@@ -4,7 +4,7 @@ import torch.nn as nn
 from torch.autograd import Variable 
 import torch.nn.functional as F
 import math
-
+from collections import OrderedDict
 
 
 class PostionalEncoding(nn.Module): 
@@ -281,3 +281,80 @@ class Transformer(nn.Module):
         cls_res = self.classHead(enc_src)
         if self.details: print('after cls_res: '+ str(cls_res.size()) )
         return cls_res
+
+
+
+'''
+Code to test model of Attention-based Transformer model.
+'''
+class FeedForwardLayer(nn.Module):
+    # Class encapsulating the Feed forward layer within the attention block. 
+    def __init__(self, input_size, hidden_size, output_size):
+        super(FeedForwardLayer, self).__init__()
+        self.fc1 = nn.Linear(input_size, hidden_size)
+        self.GELU = nn.GELU()
+        self.fc2 = nn.Linear(hidden_size, output_size)
+
+    def forward(self, x):
+        x = self.GELU(self.fc1(x))
+        x = self.fc2(x)
+        return x
+
+
+class AttentionBlock(nn.Module):
+    def __init__(self, model_dim=60, heads=4): # 60 and 4 are default values to build the model with.
+        super(AttentionBlock, self).__init__()
+
+        self.MHA = nn.MultiheadAttention(embed_dim=model_dim, num_heads=heads, batch_first=True)
+        self.norm1 = nn.LayerNorm(model_dim)
+
+        self.feedforward = FeedForwardLayer(model_dim, model_dim, model_dim)
+        self.norm2 = nn.LayerNorm(model_dim)
+
+
+    def forward(self, x):
+        x0 = self.MHA(x, x, x, need_weights=False)
+        x = self.norm1(x + x0[0])
+
+        x1 = self.feedforward(x)
+        x = self.norm2(x+x1)
+
+        return x
+    
+#model 2 - Attention-based Transformer
+class transformNET(nn.Module):
+    def __init__(self, num_blocks = 6, heads=4, model_dim=60):
+        super(transformNET, self).__init__()
+
+        self.blocks = OrderedDict()
+        for i in range((num_blocks)):
+          self.blocks[str(i)] = AttentionBlock(model_dim, heads)
+
+        self.transformer_encoder = nn.Sequential(self.blocks)
+
+
+        self.maxpool1 = nn.MaxPool1d(kernel_size=8, stride=8)
+
+        self.gelu = nn.GELU()
+        # Adjusted dimensions according to your model's requirement
+        self.fc1 = nn.Linear(3840, 256)  # Adjust the input size as needed
+        self.dropout1 = nn.Dropout(0.2)
+        self.fc2 = nn.Linear(256, 64)
+        self.dropout2 = nn.Dropout(0.2)
+        self.fc3 = nn.Linear(64, 2)
+        self.softmax = nn.Softmax(dim=1)
+
+    def forward(self, x):
+
+        x = self.transformer_encoder(x)
+
+        x = torch.flatten(x, 1)
+        x = self.maxpool1(x)
+
+        x = self.gelu(self.fc1(x))
+        x = self.dropout1(x)
+        x = self.gelu(self.fc2(x))
+        x = self.dropout2(x)
+        x = self.gelu(self.fc3(x))
+        x = self.softmax(x)
+        return x
