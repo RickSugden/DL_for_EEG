@@ -109,7 +109,7 @@ def validate(model, valloader,threshold=0.5,supress_output=False, device='cpu', 
       true_positives, false_positives, true_negatives, false_negatives (int):confusion matrix
       vote (str): correct/incorrect at the subject level
       sequence (list): binary list of which epochs were classified correctly or incorrectly, for the waterfall plot
-  '''
+  ''' 
   sequence=[]
   total_loss = 0
   true_positives = 0
@@ -127,7 +127,7 @@ def validate(model, valloader,threshold=0.5,supress_output=False, device='cpu', 
     
     #forward
     output = model(inputs)
-
+    labels = labels.float()
     #calculate loss using L2 regularization and CE loss
     criterion = nn.CrossEntropyLoss() 
     l2_lambda = 0.0001
@@ -141,18 +141,20 @@ def validate(model, valloader,threshold=0.5,supress_output=False, device='cpu', 
     output[output<=threshold] = 0
    
     #determine whether each classification was true/false and postive/negative
+    # print(f"output shape = {output.shape}")
+    # print(f"labels shape = {labels.shape}")
     for j in range(0,len(output)):
       
-      if (output[j,0].item() == 1) and (labels[j].item() == 1):
+      if (output[j,0].item() == 1) and (labels[j][0].item() == 1):
           true_positives += 1
           sequence.append(1)
-      elif(output[j,0].item()==1) and (labels[j].item() == 0):
+      elif(output[j,0].item()==1) and (labels[j][0].item() == 0):
           false_positives += 1
           sequence.append(0)
-      elif(output[j,0].item()==0) and (labels[j].item()== 1):
+      elif(output[j,0].item()==0) and (labels[j][0].item()== 1):
           false_negatives += 1
           sequence.append(0)
-      elif(output[j,0].item()==0) and (labels[j].item()== 0):
+      elif(output[j,0].item()==0) and (labels[j][0].item()== 0):
           true_negatives += 1
           sequence.append(1)
       else:
@@ -176,7 +178,7 @@ def validate(model, valloader,threshold=0.5,supress_output=False, device='cpu', 
     print('false negatives', false_negatives)  
     if LOSO_mode==True: print('The vote was: ', vote)
 
-  return true_positives, false_positives, true_negatives, false_negatives, vote, sequence
+  return true_positives, false_positives, true_negatives, false_negatives, vote, sequence, total_loss
 
 #cross train function for loso cross validation
 def cross_train(model, train_dataloader, val_dataloader, epochs=23, learning_rate=0.0001, num_workers=2,  threshold=0.5, chunk_size=2500, device='cpu', supress_output=False):
@@ -728,9 +730,6 @@ def train_and_test(epochs, learning_rate, configuration, EEG_Dataset, device="cp
   return log #rick: results was not being defined, so I removed it.
 
 
-
-
-
 def trainTransformer(model,train_dataloader, val_dataloader, epochs=30, learning_rate=0.0001, device="cpu"):
     '''
     INPUTS: 
@@ -750,12 +749,15 @@ def trainTransformer(model,train_dataloader, val_dataloader, epochs=30, learning
     '''
 
     # assert epochs > len(training_loss_tracker), 'Loss tracker is already equal to or greater than epochs'
-    model.train()
+    # model.train()
     #define loss function and optimizer
     criterion = nn.CrossEntropyLoss(weight=torch.tensor([0.5,0.5]).cuda(), label_smoothing = 0.1)# #you can adjust weights. first number is applied to PD and the second number to Control
     optimizer = optim.Adam(model.parameters(), betas = (0.9, 0.98), eps = 1.0e-9, lr=learning_rate)
-    scheduler = torch.optim.lr_scheduler.StepLR(optimizer, step_size=15, gamma=0.65)
-    start_decay_epoch = 15
+    # scheduler = torch.optim.lr_scheduler.StepLR(optimizer, step_size=15, gamma=0.65)
+    # scheduler implements LR Decay automatically: https://stackoverflow.com/questions/60050586/pytorch-change-the-learning-rate-based-on-number-of-epochs
+    scheduler = torch.optim.lr_scheduler.StepLR(optimizer, step_size=epochs // 6, gamma=0.5)
+
+    start_decay_epoch = 30
     #scheduler = Scheduler(optimizer, dim_embed=60, warmup_steps=5)
 
     #start a timer
@@ -765,10 +767,18 @@ def trainTransformer(model,train_dataloader, val_dataloader, epochs=30, learning
 
     # current_epoch = len(training_loss_tracker)
     counter = 0
-
+    current_total_loss = 10 ** 5
+    autostop_counter = 0
+    log = []
     #here, we take Epoch in a deep learning sense (i.e. iteration of training over the whole dataset)
     # for epoch in range(current_epoch, epochs):
     for epoch in range(epochs):
+      #######################################################################################################
+      ############################################# TRAINING ################################################
+      #######################################################################################################
+      torch.cuda.empty_cache()
+      print("Training session for epoch # " + str(epoch))
+      model.train()
       # Assuming 'optimizer' is your optimizer object
       current_learning_rate = optimizer.param_groups[0]['lr']
       print("Current/Last Learning Rate:", current_learning_rate)
@@ -792,11 +802,17 @@ def trainTransformer(model,train_dataloader, val_dataloader, epochs=30, learning
         # forward
         outputs = model(inputs)
         # print(f"output type = {outputs.type()}")
-        # outputs = outputs.long()
+        # print(f"labels type = {labels.type()}")
+        labels = labels.float()
+        # print(f"labels type = {labels.type()}")
+
 
         #Apply L2 Regularization. Replace pow(2.0) with abs() for L1 regularization
-        # l2_lambda = 0.001
+        # l2_lambda = 0.01
         # l2_norm = sum(p.pow(2.0).sum() for p in model.parameters())
+        # if epoch % 30 == 0:
+        #   l2_lambda /= 10
+
 
         #loss + backward + optimize
         loss = criterion(outputs,labels) # + l2_lambda*l2_norm
@@ -810,28 +826,34 @@ def trainTransformer(model,train_dataloader, val_dataloader, epochs=30, learning
       if epoch >= start_decay_epoch:
         scheduler.step()
 
-  ##########################################################################
-  ################################ Validation ##############################  
-  ##########################################################################
-            
-    log = []
+      ##########################################################################
+      ################################ Validation ##############################  
+      ##########################################################################
+      print("Validating session for epoch # " + str(epoch))
+      model.eval()
+      
+      TP, FP, TN, FN, vote, sequence, total_loss = validate(model, val_dataloader, device = device)
+      if total_loss >= current_total_loss:
+        autostop_counter += 1
+      else:
+        current_total_loss = total_loss
+        autostop_counter = 0
+      
+      if autostop_counter >= 10 or epoch == epochs - 1: # Either autostop condition is satisfied or training is done
+        # precision, sensitivity, accuracy, f1 = TP + (TP + FP), TP / (TP + FN), (TP + TN) / (TP + FN + TN + FP), (2*sensitivity*precision) / (precision + sensitivity) 
+        accuracy, f1, sensitivity, specificity, precision = calculate_metrics(TP, FP, TN, FN)
+        # whatever you are timing goes here
+        end.record()
+        log = [TP, FP, TN, FN, accuracy, f1, sensitivity, specificity, precision]
 
-    
-    TP, FP, TN, FN, vote, sequence = validate(model, val_dataloader, device = device)
-    # precision, sensitivity, accuracy, f1 = TP + (TP + FP), TP / (TP + FN), (TP + TN) / (TP + FN + TN + FP), (2*sensitivity*precision) / (precision + sensitivity) 
-    accuracy, f1, sensitivity, specificity, precision = calculate_metrics(TP, FP, TN, FN)
 
-    # whatever you are timing goes here
-    end.record()
-    log = [TP, FP, TN, FN, accuracy, f1, sensitivity, specificity, precision]
+        # Waits for everything to finish running
+        torch.cuda.synchronize()
 
-
-    # Waits for everything to finish running
-    torch.cuda.synchronize()
-
-    print('Finished Training + Validation Session')
-    print('Time elapsed in miliseconds: ', start.elapsed_time(end))  # milliseconds
-    print('The training loss at the end of this session is: ',loss.item())
+        print('Finished Training + Validation Session')
+        print('Time elapsed in miliseconds: ', start.elapsed_time(end))  # milliseconds
+        print('The training loss at the end of this session is: ',loss.item())
+        break
 
     # return training_loss_tracker, val_loss_tracker
     return log
