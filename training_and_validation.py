@@ -10,6 +10,7 @@ from tqdm import tqdm
 # new imports
 import transformer_models
 from transformer_models import transformNET, AttentionBlock, MultiHeadAttention
+import gc
  
 def train_with_validation(model,train_dataloader, val_dataloader, epochs=30, learning_rate=0.0001, training_loss_tracker=[], val_loss_tracker=[], device="cpu"):
     '''
@@ -119,8 +120,13 @@ def validate(model, valloader,threshold=0.5,supress_output=False, device='cpu', 
   vote = 0
   counter = 0
 
+  #calculate loss using L2 regularization and CE loss
+  criterion = nn.CrossEntropyLoss() 
+  # l2_lambda = 0.0001
+  # l2_norm = sum(p.pow(2.0).sum() for p in model.parameters())
+
   #This loads a batch at time
-  for i, data in enumerate(valloader, 0):
+  for data in tqdm(valloader):
     #read in data
     inputs, labels, filename = data
     inputs, labels = torch.permute(inputs,(0,2,1)).to(device), labels.to(torch.int64).to(device) #send them to the GPU. Simo changes feb15-2024: permutation + type of labels from float32 to int64 
@@ -128,12 +134,8 @@ def validate(model, valloader,threshold=0.5,supress_output=False, device='cpu', 
     #forward
     output = model(inputs)
     labels = labels.float()
-    #calculate loss using L2 regularization and CE loss
-    criterion = nn.CrossEntropyLoss() 
-    l2_lambda = 0.0001
-    l2_norm = sum(p.pow(2.0).sum() for p in model.parameters())
 
-    total_loss += criterion(output,labels) + l2_lambda*l2_norm 
+    total_loss += criterion(output,labels).item() # + l2_lambda*l2_norm 
     counter += 1
   
     #binarize output according to the threshold you set
@@ -159,6 +161,10 @@ def validate(model, valloader,threshold=0.5,supress_output=False, device='cpu', 
           sequence.append(1)
       else:
         AssertionError, 'not able to assign classification as true or false'
+    
+    # torch.cuda.empty_cache()
+    # del inputs, labels, output
+    # gc.collect()
  
   #aggregate epochs via majority vote
   if LOSO_mode==True:
@@ -714,7 +720,9 @@ def initialize_model(model_type='CNN', device='cpu'):
 def train_and_test(epochs, learning_rate, configuration, EEG_Dataset, device="cpu"):
   # Creating data test/val split
   train_dataset, val_dataset = random_split(EEG_Dataset, [0.9, 0.1],generator=torch.Generator().manual_seed(402))
-
+  del EEG_Dataset
+  gc.collect()
+  torch.cuda.empty_cache()
 
   #create a respective dataloader out of the test/val split
   batch_size = configuration['batch_size']
@@ -747,7 +755,6 @@ def trainTransformer(model,train_dataloader, val_dataloader, epochs=30, learning
       training_loss_tracker(list): updated list containing float values of training loss from previous training.
       val_loss_tracker(list): updated list containing float values of validation loss from previous training.
     '''
-
     # assert epochs > len(training_loss_tracker), 'Loss tracker is already equal to or greater than epochs'
     # model.train()
     #define loss function and optimizer
@@ -776,7 +783,8 @@ def trainTransformer(model,train_dataloader, val_dataloader, epochs=30, learning
       #######################################################################################################
       ############################################# TRAINING ################################################
       #######################################################################################################
-      torch.cuda.empty_cache()
+      # torch.cuda.empty_cache()
+      # gc.collect()
       print("Training session for epoch # " + str(epoch))
       model.train()
       # Assuming 'optimizer' is your optimizer object
@@ -785,7 +793,8 @@ def trainTransformer(model,train_dataloader, val_dataloader, epochs=30, learning
 
       running_loss = 0.0
       counter = 0
-      for i, data in enumerate(train_dataloader, 0):
+      for data in tqdm(train_dataloader):
+
       # for data in (iter(train_dataloader)):
         # get the inputs; data is a list of [inputs, labels]
         # print(data)
@@ -821,6 +830,9 @@ def trainTransformer(model,train_dataloader, val_dataloader, epochs=30, learning
 
         running_loss += loss.item()
         counter += 1
+
+        # del inputs, labels
+        # gc.collect()
       #print(loss.item())
 
       if epoch >= start_decay_epoch:
