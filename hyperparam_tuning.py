@@ -4,6 +4,7 @@ import training_and_validation
 from training_and_validation import loso_cross_validation, train_and_test
 from tqdm import tqdm
 from scipy.stats import loguniform
+import torch
 
 
 def make_csv_from_log(log, final_metrics, filename='CV', save_path='./training_results'):
@@ -44,7 +45,7 @@ def make_csv_from_log(log, final_metrics, filename='CV', save_path='./training_r
     return csv
  
 
-def perform_random_hyperparameter_search(EEG_dataset, leave_one_out_list,  sample_size=60, search_title='Transformer_hyperparameter_search/', save_path='./training_results/', batch_min_max = (1,32), epoch_min_max=(5,50),learning_rate_min_max=(0.000001,0.001), model_type='Transformer', attention_blocks=6, heads=4, model_dim=60, seq_length=512, supress_output=True, device='cpu',rand_seed=42):
+def perform_random_hyperparameter_search(EEG_dataset, leave_one_out_list,  sample_size=60, search_title='Transformer_hyperparameter_search/', save_path='./training_results/', batch_min_max = (1,32), epoch_min_max=(5,50),learning_rate_min_max=(0.000001,0.001), model_type='Transformer', attention_blocks=(1,8), heads=(1,8), model_dim=60, seq_length=512, supress_output=True, device='cpu',rand_seed=42):
 
     random.seed(rand_seed)
 
@@ -84,7 +85,16 @@ def perform_random_hyperparameter_search(EEG_dataset, leave_one_out_list,  sampl
             attention_min, attention_max = attention_blocks
             head_min, head_max = heads
             num_heads = random.randint(head_min, head_max)
+            c = 0
+            while model_dim % num_heads != 0:
+                c += 1
+                num_heads = random.randint(head_min, head_max)
+                if c > 100:
+                    num_heads = 1
+                    # this is to prevent infinite looping, in case head_min, head_max are not chosen correctly in a future test run.
+
             #set the number of layers to be a random integer between 1 and 8
+
             num_blocks = random.randint(attention_min, attention_max)
 
             #set experiment title
@@ -113,6 +123,7 @@ def perform_random_hyperparameter_search(EEG_dataset, leave_one_out_list,  sampl
 
         #save results
         make_csv_from_log(log, total_metrics, filename=configuration_string, save_path=save_path)
+        torch.cuda.empty_cache()
         
 
 
