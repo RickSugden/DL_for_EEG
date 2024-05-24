@@ -1,4 +1,4 @@
-# Deep Learning for EEG pipeline
+# Deep Learning Classifiers to Mimic Diagnosis of Parkinson's from EEG Data
 
 Code used to generate the results for my paper: "Generalizable electroencephalographic classification of Parkinson's disease using deep learning"
 doi: https://doi.org/10.1016/j.imu.2023.101352
