@@ -33,3 +33,9 @@ you're now ready to start.
 - local notebooks are optimized for GPU usage and python 3.9.6
 - requirements.txt provided
 - If you are trying to develop new models, and test rigorously, I recommend doing it locally with the GPU repo.
+
+Here is the architecture used in the publication
+![PD_CNN_architecture](https://github.com/RickSugden/DL_for_EEG/assets/41484082/6d63e8ca-f0ba-4af3-aff5-acd3be35360f)
+
+This was the first open-source demonstration of diagnosing **Unseen** Patients with Parkinson's disease, results show balanced classification using Leave-one-subject out Cross validation. 
+![result_3](https://github.com/RickSugden/DL_for_EEG/assets/41484082/e772b939-62a6-435c-81c5-d8d62a11ccba)
