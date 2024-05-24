@@ -1,7 +1,8 @@
 # Deep Learning for EEG pipeline
 
-This is a repo of the code used to develop the paper: Generalizable electroencephalographic classification of Parkinson's disease using deep learning
+Code used to generate the results for my paper: "Generalizable electroencephalographic classification of Parkinson's disease using deep learning"
 doi: https://doi.org/10.1016/j.imu.2023.101352
+The code base is built to be modular and allow for a variety of experiements to be performed, including the development of an attention-based transformer for EEG diagnosis (WIP).
 
 ### Contents
 ### 1. main.ipynb
